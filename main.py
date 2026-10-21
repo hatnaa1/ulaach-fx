@@ -19,6 +19,7 @@ from platform_routes import (
     _ww_text,
     extract_visitor_info,
     fetch_weather_hub_data,
+    get_live_meteo_for_stations,
     num2words_mn,
     parse_mongolian_regno,
     render_portal_page,
@@ -1066,8 +1067,14 @@ async def get_weather_json(
             *params,
         )
 
+    live_map: dict[int, dict[str, Any]] = {}
+    if len(rows) <= 50:
+        coords = [(r["sid"], float(r["lat"]), float(r["lon"])) for r in rows if r["lat"] is not None and r["lon"] is not None]
+        live_map = await get_live_meteo_for_stations(coords)
+
     out = []
     for r in rows:
+        lv = live_map.get(r["sid"], {})
         out.append(
             {
                 "sid": r["sid"],
@@ -1077,16 +1084,18 @@ async def get_weather_json(
                 "lat": r["lat"],
                 "lon": r["lon"],
                 "elev_m": r["elev"],
-                "obs_time": r["obs_time_ub"].strftime("%Y-%m-%d %H:%M:%S") if r["obs_time_ub"] else None,
-                "temp_c": round(float(r["temp"]), 1) if r["temp"] is not None else None,
+                "obs_time": lv.get("obs_time") or (r["obs_time_ub"].strftime("%Y-%m-%d %H:%M:%S") if r["obs_time_ub"] else None),
+                "temp_c": lv.get("temp_c") if lv.get("temp_c") is not None else (round(float(r["temp"]), 1) if r["temp"] is not None else None),
+                "feels_c": lv.get("feels_c"),
+                "temp_synop_c": round(float(r["temp"]), 1) if r["temp"] is not None else None,
                 "temp_min_c": round(float(r["temp_min"]), 1) if r["temp_min"] is not None else None,
                 "temp_max_c": round(float(r["temp_max"]), 1) if r["temp_max"] is not None else None,
-                "humidity_pct": r["humidity"],
-                "wind_ms": round(float(r["wind_speed"]), 1) if r["wind_speed"] is not None else None,
-                "wind_dir_deg": r["wind_dir"],
-                "pressure_hpa": round(float(r["pressure_slp"]), 1) if r["pressure_slp"] is not None else None,
+                "humidity_pct": lv.get("humidity_pct") if lv.get("humidity_pct") is not None else r["humidity"],
+                "wind_ms": lv.get("wind_ms") if lv.get("wind_ms") is not None else (round(float(r["wind_speed"]), 1) if r["wind_speed"] is not None else None),
+                "wind_dir_deg": lv.get("wind_dir_deg") if lv.get("wind_dir_deg") is not None else r["wind_dir"],
+                "pressure_hpa": round(float(r["pressure_slp"]), 1) if r["pressure_slp"] is not None else lv.get("pressure_hpa"),
                 "precip_mm": round(float(r["precip"]), 2) if r["precip"] is not None else None,
-                "condition": _ww_text(r["ww"], r["cloud_nh"]),
+                "condition": lv.get("condition") or _ww_text(r["ww"], r["cloud_nh"]),
             }
         )
     return JSONResponse(content=out)
