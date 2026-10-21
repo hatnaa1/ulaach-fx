@@ -9,7 +9,6 @@ services:
     environment:
       - TZ=Asia/Ulaanbaatar
     ports:
-      - "100.123.226.4:8085:8085"
       - "127.0.0.1:8085:8085"
     networks:
       - web
