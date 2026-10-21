@@ -8,6 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN pip install --no-cache-dir fastapi uvicorn[standard] asyncpg
 
 COPY static/ /app/static/
+COPY platform_routes.py /app/platform_routes.py
 COPY main.py /app/main.py
 
 EXPOSE 8085

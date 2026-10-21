@@ -9,12 +9,26 @@ from typing import Any
 import asyncpg
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+
+from platform_routes import (
+    _aqi_badge,
+    _ww_text,
+    extract_visitor_info,
+    fetch_weather_hub_data,
+    render_portal_page,
+    render_tool_page,
+    render_weather_page,
+)
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://fx_reader:fx_read_only_2026_ulaach@wx-postgres:5432/fx",
+    "postgresql://fx_reader:fx_read_only_2026_u@wx-postgres:5432/fx",
+)
+WEATHER_DATABASE_URL = os.environ.get(
+    "WEATHER_DATABASE_URL",
+    DATABASE_URL.rsplit("/", 1)[0] + "/weather",
 )
 
 UB_TZ = datetime.timezone(datetime.timedelta(hours=8))
@@ -143,20 +157,25 @@ os.makedirs("/app/static/img", exist_ok=True)
 app.mount("/img", StaticFiles(directory="/app/static/img"), name="img")
 
 _pool: asyncpg.Pool | None = None
+_wx_pool: asyncpg.Pool | None = None
 
 
 @app.on_event("startup")
 async def _startup() -> None:
-    global _pool
+    global _pool, _wx_pool
     _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=8, command_timeout=10)
+    _wx_pool = await asyncpg.create_pool(WEATHER_DATABASE_URL, min_size=1, max_size=6, command_timeout=10)
 
 
 @app.on_event("shutdown")
 async def _shutdown() -> None:
-    global _pool
+    global _pool, _wx_pool
     if _pool is not None:
         await _pool.close()
         _pool = None
+    if _wx_pool is not None:
+        await _wx_pool.close()
+        _wx_pool = None
 
 
 async def get_pool() -> asyncpg.Pool:
@@ -164,6 +183,13 @@ async def get_pool() -> asyncpg.Pool:
     if _pool is None:
         _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=8, command_timeout=10)
     return _pool
+
+
+async def get_wx_pool() -> asyncpg.Pool:
+    global _wx_pool
+    if _wx_pool is None:
+        _wx_pool = await asyncpg.create_pool(WEATHER_DATABASE_URL, min_size=1, max_size=6, command_timeout=10)
+    return _wx_pool
 
 
 def _fmt_rate(val: Decimal | float | None) -> str:
@@ -735,8 +761,234 @@ async def xansh_html(
     return HTMLResponse(content=page)
 
 
+@app.get("/ip", response_class=PlainTextResponse)
+async def get_ip_plain(request: Request) -> PlainTextResponse:
+    info = extract_visitor_info(request)
+    return PlainTextResponse(content=info["ip"] + "\n")
+
+
+@app.get("/json")
+async def get_ip_json(request: Request) -> JSONResponse:
+    return JSONResponse(content=extract_visitor_info(request))
+
+
+@app.get("/headers")
+async def get_request_headers(request: Request) -> JSONResponse:
+    headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in ("cookie", "authorization")
+    }
+    return JSONResponse(content={"ip": extract_visitor_info(request)["ip"], "headers": headers})
+
+
+@app.get("/weather.json")
+@app.get("/api/v1/weather")
+async def get_weather_json(
+    aimag: str | None = Query(None, description="Аймгийн нэрээр шүүх (ж.нь: Нийслэл, Дархан-Уул, Өмнөговь)"),
+    sid: int | None = Query(None, description="Станцын дугаараар шүүх (ж.нь: 292 = Улаанбаатар)"),
+    all_stations: bool = Query(False, description="True бол бүх 321 станцыг буцаана; False бол 28 гол станцыг буцаана"),
+) -> JSONResponse:
+    wx_pool = await get_wx_pool()
+    where_clauses = []
+    params: list[Any] = []
+    if sid is not None:
+        params.append(sid)
+        where_clauses.append(f"s.sid = ${len(params)}")
+    elif aimag:
+        params.append(f"%{aimag.strip()}%")
+        where_clauses.append(f"s.aimag_name ILIKE ${len(params)}")
+    elif not all_stations:
+        where_clauses.append("s.sta_28 <> 0")
+
+    where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    async with wx_pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT
+                s.sid,
+                s.aimag_name,
+                s.sum_name,
+                s.sta_name,
+                s.lat,
+                s.lon,
+                s.elev,
+                s.sta_28,
+                o.obs_time AT TIME ZONE 'Asia/Ulaanbaatar' AS obs_time_ub,
+                o.temp,
+                o.temp_min,
+                o.temp_max,
+                o.humidity,
+                o.wind_speed,
+                o.wind_dir,
+                o.pressure_slp,
+                o.precip,
+                o.ww,
+                o.cloud_nh
+            FROM wx.stations s
+            LEFT JOIN LATERAL (
+                SELECT *
+                FROM wx.obs_data d
+                WHERE d.sid = s.sid
+                ORDER BY d.obs_time DESC
+                LIMIT 1
+            ) o ON true
+            {where_sql}
+            ORDER BY CASE WHEN s.sta_28 = 0 THEN 999 ELSE s.sta_28 END ASC, s.sid ASC
+            """,
+            *params,
+        )
+
+    out = []
+    for r in rows:
+        out.append(
+            {
+                "sid": r["sid"],
+                "aimag": r["aimag_name"],
+                "sum": r["sum_name"],
+                "station": r["sta_name"],
+                "lat": r["lat"],
+                "lon": r["lon"],
+                "elev_m": r["elev"],
+                "obs_time": r["obs_time_ub"].strftime("%Y-%m-%d %H:%M:%S") if r["obs_time_ub"] else None,
+                "temp_c": round(float(r["temp"]), 1) if r["temp"] is not None else None,
+                "temp_min_c": round(float(r["temp_min"]), 1) if r["temp_min"] is not None else None,
+                "temp_max_c": round(float(r["temp_max"]), 1) if r["temp_max"] is not None else None,
+                "humidity_pct": r["humidity"],
+                "wind_ms": round(float(r["wind_speed"]), 1) if r["wind_speed"] is not None else None,
+                "wind_dir_deg": r["wind_dir"],
+                "pressure_hpa": round(float(r["pressure_slp"]), 1) if r["pressure_slp"] is not None else None,
+                "precip_mm": round(float(r["precip"]), 2) if r["precip"] is not None else None,
+                "condition": _ww_text(r["ww"], r["cloud_nh"]),
+            }
+        )
+    return JSONResponse(content=out)
+
+
+@app.get("/aqi.json")
+@app.get("/api/v1/aqi")
+async def get_aqi_json() -> JSONResponse:
+    wx_pool = await get_wx_pool()
+    async with wx_pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT DISTINCT ON (sid)
+                sid, sname, lat, lon, aqi,
+                pm25_value, pm10_value, no2_value, so2_value, co_value, o3_value,
+                obs_time AT TIME ZONE 'Asia/Ulaanbaatar' AS obs_time_ub
+            FROM wx.aqi_data
+            WHERE obs_time > NOW() - INTERVAL '48 hours'
+            ORDER BY sid, obs_time DESC
+            """
+        )
+    out = []
+    for r in rows:
+        status_label, _ = _aqi_badge(r["aqi"])
+        out.append(
+            {
+                "sid": r["sid"],
+                "station": r["sname"],
+                "lat": r["lat"],
+                "lon": r["lon"],
+                "aqi": r["aqi"],
+                "status": status_label,
+                "pm25": round(float(r["pm25_value"]), 2) if r["pm25_value"] is not None else None,
+                "pm10": round(float(r["pm10_value"]), 2) if r["pm10_value"] is not None else None,
+                "no2": round(float(r["no2_value"]), 2) if r["no2_value"] is not None else None,
+                "so2": round(float(r["so2_value"]), 2) if r["so2_value"] is not None else None,
+                "co": round(float(r["co_value"]), 2) if r["co_value"] is not None else None,
+                "o3": round(float(r["o3_value"]), 2) if r["o3_value"] is not None else None,
+                "obs_time": r["obs_time_ub"].strftime("%Y-%m-%d %H:%M:%S") if r["obs_time_ub"] else None,
+            }
+        )
+    out.sort(key=lambda x: (x["aqi"] is None, -(x["aqi"] or 0)))
+    return JSONResponse(content=out)
+
+
+@app.get("/forecast.json")
+@app.get("/api/v1/forecast")
+async def get_forecast_json(
+    sid: int = Query(292, description="Станцын дугаар (292 = Улаанбаатар)"),
+) -> JSONResponse:
+    wx_pool = await get_wx_pool()
+    async with wx_pool.acquire() as conn:
+        fore_3h = await conn.fetch(
+            """
+            SELECT DISTINCT ON (f_time)
+                f_time AT TIME ZONE 'Asia/Ulaanbaatar' AS f_time_ub,
+                pre_code, temp, temp_feels, precip_mm, precip_prob, wind
+            FROM wx.fore_3hours
+            WHERE sid = $1 AND f_time >= NOW() - INTERVAL '3 hours'
+            ORDER BY f_time ASC, issued_at DESC
+            LIMIT 16
+            """,
+            sid,
+        )
+        fore_day = await conn.fetch(
+            """
+            SELECT DISTINCT ON (fore_date)
+                fore_date, ww_code, precip_prob, temp_day, temp_day_feels, wind_day
+            FROM wx.fore_day
+            WHERE sid = $1 AND fore_date >= CURRENT_DATE - INTERVAL '1 day'
+            ORDER BY fore_date ASC, issued_at DESC
+            LIMIT 7
+            """,
+            sid,
+        )
+    return JSONResponse(
+        content={
+            "sid": sid,
+            "hourly_3h": [
+                {
+                    "time": r["f_time_ub"].strftime("%Y-%m-%d %H:%M:%S") if r["f_time_ub"] else None,
+                    "temp_c": round(float(r["temp"]), 1) if r["temp"] is not None else None,
+                    "feels_c": round(float(r["temp_feels"]), 1) if r["temp_feels"] is not None else None,
+                    "wind_ms": round(float(r["wind"]), 1) if r["wind"] is not None else None,
+                    "precip_prob_pct": r["precip_prob"],
+                    "condition": _ww_text(r["pre_code"]),
+                }
+                for r in fore_3h
+            ],
+            "daily": [
+                {
+                    "date": r["fore_date"].isoformat(),
+                    "temp_day_c": round(float(r["temp_day"]), 1) if r["temp_day"] is not None else None,
+                    "feels_c": round(float(r["temp_day_feels"]), 1) if r["temp_day_feels"] is not None else None,
+                    "wind_ms": round(float(r["wind_day"]), 1) if r["wind_day"] is not None else None,
+                    "precip_prob_pct": r["precip_prob"],
+                    "condition": _ww_text(r["ww_code"]),
+                }
+                for r in fore_day
+            ],
+        }
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
-async def index_page(request: Request) -> HTMLResponse:
+async def index_page(request: Request, site: str | None = Query(None)) -> HTMLResponse:
+    host_raw = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "ulaach.cc").split(":")[0].lower()
+    target = (site or "").strip().lower()
+    if not target:
+        if host_raw.startswith("weather."):
+            target = "weather"
+        elif host_raw.startswith("tool.") or host_raw.startswith("ip."):
+            target = "tool"
+        elif host_raw.startswith("fx.") or host_raw.startswith("xansh."):
+            target = "fx"
+        else:
+            target = "portal"
+
+    if target == "tool":
+        return render_tool_page(request)
+    if target == "weather":
+        wx_pool = await get_wx_pool()
+        return await render_weather_page(wx_pool)
+    if target == "portal":
+        fx_pool = await get_pool()
+        wx_pool = await get_wx_pool()
+        return await render_portal_page(request, fx_pool, wx_pool)
+
     mnb_items = await _fetch_mnb_for_date(None, lang="MN")
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -1220,17 +1472,19 @@ async def index_page(request: Request) -> HTMLResponse:
 <body>
   <div class="topbar">
     <div class="topbar-inner">
-      <div class="brand-bar">
+      <a class="brand-bar" href="https://ulaach.cc" style="text-decoration:none;">
         <span class="status-dot"></span>
-        <span>ulaach.cc // FX-API v1.1</span>
-      </div>
+        <span>fx.ulaach.cc // FX-API v1.2</span>
+      </a>
       <div class="nav-links">
+        <a class="nav-btn" href="https://ulaach.cc">← Portal (ulaach.cc)</a>
         <a class="nav-btn" href="#sec-1">01. Endpoints</a>
         <a class="nav-btn" href="#sec-2">02. Params &amp; Widget</a>
         <a class="nav-btn" href="#sec-3">03. Bank Rates</a>
         <a class="nav-btn" href="#sec-4">04. MNB 38 Currencies</a>
-        <a class="nav-btn" href="/health" target="_blank">/health</a>
-        <a class="nav-btn primary" href="/api/docs" target="_blank">OpenAPI / Swagger →</a>
+        <a class="nav-btn" href="https://weather.ulaach.cc">weather.ulaach.cc</a>
+        <a class="nav-btn" href="https://tool.ulaach.cc">tool.ulaach.cc</a>
+        <a class="nav-btn primary" href="/api/docs" target="_blank">OpenAPI →</a>
       </div>
     </div>
   </div>
