@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import datetime
 import html
 import os
@@ -14,12 +15,22 @@ from fastapi.staticfiles import StaticFiles
 
 from platform_routes import (
     _aqi_badge,
+    _fire_badge,
     _ww_text,
     extract_visitor_info,
     fetch_weather_hub_data,
+    num2words_mn,
+    parse_mongolian_regno,
     render_portal_page,
     render_tool_page,
+    render_util_page,
     render_weather_page,
+    render_weather_widget,
+    sync_dns_lookup,
+    sync_ip_lookup,
+    sync_port_check,
+    sync_ssl_lookup,
+    transliterate_mn,
 )
 
 DATABASE_URL = os.environ.get(
@@ -266,11 +277,31 @@ async def _fetch_mnb_for_date(target_date: datetime.date | None, lang: str = "MN
             "SELECT code, rate, rate_date, fetched_at FROM mnb_rates WHERE rate_date = $1",
             eff_date,
         )
+        prev_row = await conn.fetchrow(
+            "SELECT MAX(rate_date) AS prev_date FROM mnb_rates WHERE rate_date < $1",
+            eff_date,
+        )
+        prev_map: dict[str, Decimal] = {}
+        if prev_row and prev_row["prev_date"]:
+            prows = await conn.fetch(
+                "SELECT code, rate FROM mnb_rates WHERE rate_date = $1",
+                prev_row["prev_date"],
+            )
+            for pr in prows:
+                if pr["rate"] is not None:
+                    prev_map[str(pr["code"]).strip().upper()] = Decimal(str(pr["rate"]))
 
     items: list[dict[str, Any]] = []
     for r in rows:
         code = str(r["code"]).strip().upper()
         rate_dec = Decimal(str(r["rate"])) if r["rate"] is not None else Decimal("0")
+        prev_dec = prev_map.get(code)
+        change_1d = round(float(rate_dec - prev_dec), 4) if prev_dec is not None else 0.0
+        change_pct = (
+            round(float((rate_dec - prev_dec) / prev_dec * Decimal("100")), 4)
+            if prev_dec and prev_dec > 0
+            else 0.0
+        )
         items.append(
             {
                 "code": code,
@@ -279,6 +310,8 @@ async def _fetch_mnb_for_date(target_date: datetime.date | None, lang: str = "MN
                 "rate": _fmt_rate(rate_dec),
                 "rate_date": r["rate_date"].isoformat(),
                 "rate_float": round(float(rate_dec), 4),
+                "change_1d": change_1d,
+                "change_pct": change_pct,
             }
         )
     items.sort(key=lambda x: CURRENCY_RANK.get(x["code"], 999))
@@ -782,6 +815,199 @@ async def get_request_headers(request: Request) -> JSONResponse:
     return JSONResponse(content={"ip": extract_visitor_info(request)["ip"], "headers": headers})
 
 
+@app.get("/lookup")
+async def get_ip_or_domain_lookup(
+    target: str = Query("8.8.8.8", description="Шалгах IP эсвэл домэйн нэр"),
+) -> JSONResponse:
+    res = await asyncio.to_thread(sync_ip_lookup, target)
+    return JSONResponse(content=res)
+
+
+@app.get("/dns")
+async def get_dns_records(
+    domain: str = Query("ulaach.cc", description="Шалгах домэйн нэр"),
+) -> JSONResponse:
+    res = await asyncio.to_thread(sync_dns_lookup, domain)
+    return JSONResponse(content=res)
+
+
+@app.get("/ssl")
+async def get_ssl_certificate(
+    domain: str = Query("ulaach.cc", description="Шалгах домэйн нэр"),
+) -> JSONResponse:
+    res = await asyncio.to_thread(sync_ssl_lookup, domain)
+    return JSONResponse(content=res)
+
+
+@app.get("/port")
+async def get_tcp_port_check(
+    host: str = Query("ulaach.cc", description="Шалгах домэйн эсвэл IP"),
+    port: int = Query(443, description="Шалгах TCP порт (1-65535)"),
+) -> JSONResponse:
+    res = await asyncio.to_thread(sync_port_check, host, port)
+    return JSONResponse(content=res)
+
+
+@app.get("/num2words")
+@app.get("/api/v1/num2words")
+async def get_num2words(
+    amount: str = Query("1254800.50", description="Тоо эсвэл мөнгөн дүн"),
+    currency: str = Query("MNT", description="Валют: MNT | USD | EUR | CNY"),
+) -> JSONResponse:
+    return JSONResponse(content=num2words_mn(amount, currency))
+
+
+@app.get("/translit")
+@app.get("/api/v1/translit")
+async def get_translit(
+    text: str = Query("Улаанбаатар", description="Хөрвүүлэх текст"),
+    dir: str = Query("cyr2lat", description="Чиглэл: cyr2lat | lat2cyr"),
+) -> JSONResponse:
+    return JSONResponse(content=transliterate_mn(text, dir))
+
+
+@app.get("/regno")
+@app.get("/api/v1/regno")
+async def get_regno_info(
+    regno: str = Query("УШ95061512", description="Монгол Улсын иргэний регистрийн дугаар"),
+) -> JSONResponse:
+    return JSONResponse(content=parse_mongolian_regno(regno))
+
+
+@app.get("/convert.json")
+@app.get("/api/v1/convert")
+async def convert_currency_api(
+    from_cur: str = Query("USD", alias="from", description="Эх валют (ж.нь: USD, EUR, MNT)"),
+    to_cur: str = Query("MNT", alias="to", description="Очих валют (ж.нь: MNT, USD, CNY)"),
+    amount: float = Query(100.0, description="Хөрвүүлэх дүн"),
+    date: str | None = Query(None, description="Түүхэн огноо: YYYY-MM-DD"),
+) -> JSONResponse:
+    d = _parse_date_param(date)
+    items = await _fetch_mnb_for_date(d, lang="MN")
+    by_code = {x["code"]: Decimal(str(x["rate_float"])) for x in items}
+    by_code["MNT"] = Decimal("1")
+
+    f_code = from_cur.strip().upper()
+    t_code = to_cur.strip().upper()
+    if f_code not in by_code:
+        raise HTTPException(status_code=400, detail=f"Дэмжигдээгүй валют: {f_code}")
+    if t_code not in by_code:
+        raise HTTPException(status_code=400, detail=f"Дэмжигдээгүй валют: {t_code}")
+
+    amt_dec = Decimal(str(amount))
+    mnt_equiv = amt_dec * by_code[f_code]
+    result_dec = mnt_equiv / by_code[t_code]
+    eff_date = items[0]["rate_date"] if items else datetime.date.today().isoformat()
+
+    bank_conversions: dict[str, Any] = {}
+    if {f_code, t_code} != {"MNT"} and ("MNT" in (f_code, t_code)):
+        fx_code = t_code if f_code == "MNT" else f_code
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            brows = await conn.fetch(
+                """
+                SELECT DISTINCT ON (bank)
+                    bank, non_cash_buy, non_cash_sell, cash_buy, cash_sell, rate_hour
+                FROM bank_rates
+                WHERE code = $1
+                ORDER BY bank, rate_hour DESC
+                """,
+                fx_code,
+            )
+        for br in brows:
+            nc_buy = Decimal(str(br["non_cash_buy"] or 0))
+            nc_sell = Decimal(str(br["non_cash_sell"] or 0))
+            if f_code != "MNT" and t_code == "MNT" and nc_buy > 0 and nc_sell > 0:
+                bank_conversions[br["bank"]] = {
+                    "non_cash_buy_rate": float(nc_buy),
+                    "non_cash_sell_rate": float(nc_sell),
+                    "you_sell_fx_get_mnt": round(float(amt_dec * nc_buy), 2),
+                    "you_buy_fx_pay_mnt": round(float(amt_dec * nc_sell), 2),
+                }
+            elif f_code == "MNT" and t_code != "MNT" and nc_sell > 0:
+                bank_conversions[br["bank"]] = {
+                    "non_cash_sell_rate": float(nc_sell),
+                    "you_get_fx": round(float(amt_dec / nc_sell), 4),
+                }
+
+    return JSONResponse(
+        content={
+            "from": f_code,
+            "to": t_code,
+            "amount": amount,
+            "rate_date": eff_date,
+            "mnb_rate_from": float(by_code[f_code]),
+            "mnb_rate_to": float(by_code[t_code]),
+            "result_mnb": round(float(result_dec), 2),
+            "result_formatted": f"{result_dec:,.2f}",
+            "result_words_mn": num2words_mn(round(float(result_dec), 2), t_code)["words_accounting_cap"]
+            if t_code in ("MNT", "USD", "EUR", "CNY")
+            else None,
+            "commercial_banks": bank_conversions,
+        }
+    )
+
+
+@app.get("/fire-risk.json")
+@app.get("/api/v1/fire-risk")
+async def get_fire_risk_json() -> JSONResponse:
+    wx_pool = await get_wx_pool()
+    async with wx_pool.acquire() as conn:
+        f_rows = await conn.fetch(
+            """
+            SELECT aimag_name, sum_name, obs_date, idx, lat, lon
+            FROM wx.tuimer
+            WHERE obs_date = (SELECT MAX(obs_date) FROM wx.tuimer)
+              AND idx > 0
+            ORDER BY idx DESC
+            LIMIT 50
+            """
+        )
+        c_rows = await conn.fetch(
+            """
+            SELECT api_id, title, author, created AT TIME ZONE 'Asia/Ulaanbaatar' AS created_ub, body_text
+            FROM wx.content
+            ORDER BY created DESC
+            LIMIT 6
+            """
+        )
+    return JSONResponse(
+        content={
+            "high_risk_soums": [
+                {
+                    "aimag": r["aimag_name"],
+                    "sum": r["sum_name"],
+                    "date": r["obs_date"].isoformat() if r["obs_date"] else None,
+                    "drought_index": r["idx"],
+                    "level": _fire_badge(r["idx"])[0],
+                    "lat": r["lat"],
+                    "lon": r["lon"],
+                }
+                for r in f_rows
+            ],
+            "bulletins": [
+                {
+                    "id": r["api_id"],
+                    "title": r["title"],
+                    "created_ub": r["created_ub"].strftime("%Y-%m-%d %H:%M:%S") if r["created_ub"] else None,
+                    "body": (r["body_text"] or "").strip(),
+                }
+                for r in c_rows
+            ],
+        }
+    )
+
+
+@app.get("/weather.html", response_class=HTMLResponse)
+async def get_weather_widget_html(
+    sid: int = Query(292, description="Станцын дугаар (292 = Улаанбаатар)"),
+    lang: str = Query("MN", description="Хэл: MN | EN | CN | JP | KR"),
+    theme: str = Query("dark", description="Загвар: dark | light"),
+) -> HTMLResponse:
+    wx_pool = await get_wx_pool()
+    return await render_weather_widget(wx_pool, sid=sid, lang=lang, theme=theme)
+
+
 @app.get("/weather.json")
 @app.get("/api/v1/weather")
 async def get_weather_json(
@@ -974,6 +1200,8 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
             target = "weather"
         elif host_raw.startswith("tool.") or host_raw.startswith("ip."):
             target = "tool"
+        elif host_raw.startswith("util.") or host_raw.startswith("utils."):
+            target = "util"
         elif host_raw.startswith("fx.") or host_raw.startswith("xansh."):
             target = "fx"
         else:
@@ -981,6 +1209,8 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
 
     if target == "tool":
         return render_tool_page(request)
+    if target == "util":
+        return render_util_page()
     if target == "weather":
         wx_pool = await get_wx_pool()
         return await render_weather_page(wx_pool)
@@ -1040,11 +1270,21 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
 
     all_mnb_rows = []
     for item in mnb_items:
+        chg = item.get("change_1d", 0.0)
+        chg_pct = item.get("change_pct", 0.0)
+        if chg > 0:
+            chg_html = f"<span style='color:#34d399;font-weight:600;'>▲ +{chg:,.2f} ₮ (+{chg_pct:.2f}%)</span>"
+        elif chg < 0:
+            chg_html = f"<span style='color:#f43f5e;font-weight:600;'>▼ {chg:,.2f} ₮ ({chg_pct:.2f}%)</span>"
+        else:
+            chg_html = "<span class='muted'>0.00 ₮ (0.00%)</span>"
+
         all_mnb_rows.append(
             f"<tr>"
             f"<td><span class='code-badge'>{html.escape(item['code'])}</span></td>"
             f"<td>{html.escape(item['name'])}</td>"
             f"<td class='num strong'>{html.escape(item['rate'])} ₮</td>"
+            f"<td class='num mono'>{chg_html}</td>"
             f"<td class='mono muted'>{html.escape(item['rate_date'])}</td>"
             f"<td class='mono muted'>{html.escape(item['last_date'])}</td>"
             f"</tr>"
@@ -1537,10 +1777,33 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
         <div class="ep">
           <div class="ep-left">
             <span class="ep-method">GET</span>
+            <a class="ep-url" href="/convert.json?from=USD&to=MNT&amount=100" target="_blank">/convert.json?from=USD&amp;to=MNT&amp;amount=100</a>
+          </div>
+          <span class="ep-desc">Валют хөрвүүлэлтийн шууд API (Монголбанк + 3 банкны ханшаар + дүнг монгол үсгээр)</span>
+        </div>
+
+        <div class="ep">
+          <div class="ep-left">
+            <span class="ep-method">GET</span>
             <a class="ep-url" href="/history.json?currency=USD&days=30" target="_blank">/history.json?currency=USD&amp;days=30</a>
           </div>
           <span class="ep-desc">Валютын сүүлийн N хоногийн (эсвэл <code>start_date</code>..<code>end_date</code>) түүхэн цуваа</span>
         </div>
+      </div>
+
+      <div style="margin: 14px 20px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
+          <span class="mono" style="font-size:12px;color:var(--ink-bright);font-weight:600;">📈 30 ХОНОГИЙН ХАНШИЙН ХӨДӨЛГӨӨН (GET /history.json)</span>
+          <div class="lang-tabs" id="chart-tabs">
+            <button type="button" class="lang-btn active" data-cur="USD">USD</button>
+            <button type="button" class="lang-btn" data-cur="EUR">EUR</button>
+            <button type="button" class="lang-btn" data-cur="CNY">CNY</button>
+            <button type="button" class="lang-btn" data-cur="RUB">RUB</button>
+            <button type="button" class="lang-btn" data-cur="JPY">JPY</button>
+            <button type="button" class="lang-btn" data-cur="KRW">KRW</button>
+          </div>
+        </div>
+        <div id="fx-chart-box" style="width:100%;height:140px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:12px;">Loading chart...</div>
       </div>
 
       <div class="code-grid">
@@ -1700,8 +1963,9 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
               <th style="width:90px;">Код</th>
               <th>Валютын нэр</th>
               <th class="num">Албан ханш</th>
-              <th style="width:140px;">Ханшийн огноо</th>
-              <th style="width:170px;">Татсан цаг</th>
+              <th class="num" style="width:185px;">Өмнөх өдрөөс (Δ)</th>
+              <th style="width:130px;">Ханшийн огноо</th>
+              <th style="width:165px;">Татсан цаг</th>
             </tr>
           </thead>
           <tbody>
@@ -1748,6 +2012,54 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
           updateWidget();
         }});
       }});
+
+      async function loadChart(cur) {{
+        var box = document.getElementById('fx-chart-box');
+        if (!box) return;
+        try {{
+          var res = await fetch('/history.json?currency=' + encodeURIComponent(cur) + '&days=35');
+          var rows = await res.json();
+          if (!rows || rows.length < 2) {{
+            box.textContent = 'Түүхэн өгөгдөл хүрэлцэхгүй байна.';
+            return;
+          }}
+          var vals = rows.map(function(r) {{ return Number(r.rate_float); }});
+          var dates = rows.map(function(r) {{ return r.rate_date; }});
+          var minV = Math.min.apply(null, vals);
+          var maxV = Math.max.apply(null, vals);
+          var span = (maxV - minV) || 1;
+          var w = 960, h = 115, padX = 12, padY = 16;
+          var pts = vals.map(function(v, i) {{
+            var x = padX + (i / (vals.length - 1)) * (w - padX * 2);
+            var y = h - padY - ((v - minV) / span) * (h - padY * 2);
+            return x.toFixed(1) + ',' + y.toFixed(1);
+          }}).join(' ');
+          var first = vals[0], last = vals[vals.length - 1];
+          var diff = (last - first).toFixed(2);
+          var stroke = last >= first ? '#34d399' : '#f43f5e';
+          box.innerHTML =
+            '<div style="width:100%;">' +
+            '<div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-bottom:4px;">' +
+            '<span>' + cur + '/MNT (' + dates[0] + ' → ' + dates[dates.length-1] + ')</span>' +
+            '<span>Min: <strong style="color:#e2e8f0">' + minV.toFixed(2) + '</strong> • Max: <strong style="color:#e2e8f0">' + maxV.toFixed(2) + '</strong> • Latest: <strong style="color:' + stroke + '">' + last.toFixed(2) + ' ₮ (' + (diff >= 0 ? '+' : '') + diff + ')</strong></span>' +
+            '</div>' +
+            '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%;height:110px;overflow:visible;">' +
+            '<polyline fill="none" stroke="' + stroke + '" stroke-width="2.4" points="' + pts + '" />' +
+            '</svg>' +
+            '</div>';
+        }} catch (e) {{
+          box.textContent = 'Chart error: ' + e;
+        }}
+      }}
+
+      document.querySelectorAll('#chart-tabs .lang-btn').forEach(function(btn) {{
+        btn.addEventListener('click', function() {{
+          document.querySelectorAll('#chart-tabs .lang-btn').forEach(function(b) {{ b.classList.remove('active'); }});
+          btn.classList.add('active');
+          loadChart(btn.getAttribute('data-cur'));
+        }});
+      }});
+      loadChart('USD');
     }})();
   </script>
 </body>
