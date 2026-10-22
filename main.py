@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 import asyncpg
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,12 +17,17 @@ from platform_routes import (
     _aqi_badge,
     _fire_badge,
     _ww_text,
+    build_seo_meta_html,
     extract_visitor_info,
     fetch_weather_hub_data,
     get_live_meteo_for_stations,
     num2words_mn,
     parse_mongolian_regno,
+    render_favicon_svg,
+    render_og_image_svg,
     render_portal_page,
+    render_robots_txt,
+    render_sitemap_xml,
     render_tool_page,
     render_util_page,
     render_weather_page,
@@ -342,6 +347,42 @@ async def health() -> dict[str, Any]:
             "total_rows": bank_row["cnt"],
         },
     }
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+async def get_robots_txt(request: Request) -> PlainTextResponse:
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "ulaach.cc"
+    return PlainTextResponse(content=render_robots_txt(host), media_type="text/plain; charset=utf-8")
+
+
+@app.get("/sitemap.xml")
+async def get_sitemap_xml(request: Request) -> Response:
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "ulaach.cc"
+    return Response(content=render_sitemap_xml(host), media_type="application/xml; charset=utf-8")
+
+
+@app.get("/favicon.svg")
+@app.get("/favicon.ico")
+async def get_favicon() -> Response:
+    return Response(content=render_favicon_svg(), media_type="image/svg+xml; charset=utf-8")
+
+
+@app.get("/og-image.svg")
+async def get_og_image(request: Request, site: str | None = Query(None)) -> Response:
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "ulaach.cc").split(":")[0].lower()
+    target = (site or "").strip().lower()
+    if not target:
+        if host.startswith("weather."):
+            target = "weather"
+        elif host.startswith("tool."):
+            target = "tool"
+        elif host.startswith("util."):
+            target = "util"
+        elif host.startswith("fx."):
+            target = "fx"
+        else:
+            target = "portal"
+    return Response(content=render_og_image_svg(target), media_type="image/svg+xml; charset=utf-8")
 
 
 @app.get("/xansh.json")
@@ -1307,16 +1348,18 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
             f"</tr>"
         )
 
-    host = request.headers.get("host", "ulaach.cc")
+    host = request.headers.get("host", "fx.ulaach.cc")
     proto = request.headers.get("x-forwarded-proto", "https")
     base_url = f"{proto}://{host}"
+    fx_seo_meta = build_seo_meta_html("fx", title_override="fx.ulaach.cc — Монголбанк ба Арилжааны Банкуудын Валютын Ханшийн Developer API")
 
     html_doc = f"""<!DOCTYPE html>
 <html lang="mn">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ulaach.cc // Валютын ханшийн Developer API</title>
+  <title>fx.ulaach.cc — Монголбанк ба Арилжааны Банкуудын Валютын Ханшийн Developer API</title>
+{fx_seo_meta}
   <style>
     :root {{
       --bg: #090d16;
