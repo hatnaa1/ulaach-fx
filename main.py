@@ -356,9 +356,14 @@ async def get_robots_txt(request: Request) -> PlainTextResponse:
 
 
 @app.api_route("/sitemap.xml", methods=["GET", "HEAD"])
+@app.api_route("/sitemap-index.xml", methods=["GET", "HEAD"])
 async def get_sitemap_xml(request: Request) -> Response:
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "ulaach.cc"
-    return Response(content=render_sitemap_xml(host), media_type="application/xml; charset=utf-8")
+    return Response(
+        content=render_sitemap_xml(host).encode("utf-8"),
+        media_type="application/xml",
+        headers={"Cache-Control": "public, max-age=0, must-revalidate"},
+    )
 
 
 @app.api_route("/favicon.svg", methods=["GET", "HEAD"])

@@ -1022,7 +1022,7 @@ def render_robots_txt(host: str) -> str:
 
 def render_sitemap_xml(host: str) -> str:
     clean_host = (host or "ulaach.cc").split(":")[0].lower()
-    today_iso = datetime.datetime.now(UB_TZ).date().isoformat()
+    now_iso = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:00:00Z")
 
     host_urls: dict[str, list[tuple[str, str, str]]] = {
         "ulaach.cc": [
@@ -1030,30 +1030,19 @@ def render_sitemap_xml(host: str) -> str:
         ],
         "fx.ulaach.cc": [
             ("https://fx.ulaach.cc/", "hourly", "1.0"),
-            ("https://fx.ulaach.cc/xansh.json", "hourly", "0.9"),
-            ("https://fx.ulaach.cc/banks.json", "hourly", "0.9"),
-            ("https://fx.ulaach.cc/convert.json?from=USD&to=MNT&amount=100", "hourly", "0.8"),
-            ("https://fx.ulaach.cc/history.json?currency=USD&days=30", "daily", "0.8"),
             ("https://fx.ulaach.cc/xansh.html?lang=MN&theme=dark", "daily", "0.8"),
+            ("https://fx.ulaach.cc/xansh.html?lang=EN&theme=dark", "daily", "0.7"),
         ],
         "weather.ulaach.cc": [
             ("https://weather.ulaach.cc/", "hourly", "1.0"),
-            ("https://weather.ulaach.cc/weather.json", "hourly", "0.9"),
-            ("https://weather.ulaach.cc/insights.json", "hourly", "0.9"),
-            ("https://weather.ulaach.cc/aqi.json", "hourly", "0.9"),
-            ("https://weather.ulaach.cc/forecast.json?sid=292", "hourly", "0.8"),
-            ("https://weather.ulaach.cc/fire-risk.json", "daily", "0.8"),
             ("https://weather.ulaach.cc/weather.html?sid=292&lang=MN&theme=dark", "hourly", "0.8"),
+            ("https://weather.ulaach.cc/weather.html?sid=292&lang=EN&theme=dark", "hourly", "0.7"),
         ],
         "tool.ulaach.cc": [
             ("https://tool.ulaach.cc/", "daily", "1.0"),
-            ("https://tool.ulaach.cc/json", "daily", "0.8"),
-            ("https://tool.ulaach.cc/headers", "daily", "0.7"),
         ],
         "util.ulaach.cc": [
             ("https://util.ulaach.cc/", "weekly", "1.0"),
-            ("https://util.ulaach.cc/num2words?amount=1254800.50&currency=MNT", "weekly", "0.8"),
-            ("https://util.ulaach.cc/translit?text=Ulaanbaatar&dir=lat2cyr", "weekly", "0.8"),
         ],
     }
 
@@ -1061,19 +1050,19 @@ def render_sitemap_xml(host: str) -> str:
     url_blocks = []
     for loc, freq, prio in entries:
         url_blocks.append(
-            f"  <url>\n"
-            f"    <loc>{html.escape(loc)}</loc>\n"
-            f"    <lastmod>{today_iso}</lastmod>\n"
-            f"    <changefreq>{freq}</changefreq>\n"
-            f"    <priority>{prio}</priority>\n"
-            f"  </url>"
+            f"<url>\n"
+            f"<loc>{html.escape(loc)}</loc>\n"
+            f"<lastmod>{now_iso}</lastmod>\n"
+            f"<changefreq>{freq}</changefreq>\n"
+            f"<priority>{prio}</priority>\n"
+            f"</url>"
         )
 
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         + "\n".join(url_blocks)
-        + "\n</urlset>\n"
+        + "\n</urlset>"
     )
 
 
