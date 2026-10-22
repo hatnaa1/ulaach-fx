@@ -999,6 +999,14 @@ async def get_fire_risk_json() -> JSONResponse:
     )
 
 
+@app.get("/insights.json")
+@app.get("/api/v1/insights")
+async def get_weather_insights_json() -> JSONResponse:
+    wx_pool = await get_wx_pool()
+    data = await fetch_weather_hub_data(wx_pool)
+    return JSONResponse(content=data["insights"])
+
+
 @app.get("/weather.html", response_class=HTMLResponse)
 async def get_weather_widget_html(
     sid: int = Query(292, description="Станцын дугаар (292 = Улаанбаатар)"),
