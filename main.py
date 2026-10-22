@@ -349,25 +349,25 @@ async def health() -> dict[str, Any]:
     }
 
 
-@app.get("/robots.txt", response_class=PlainTextResponse)
+@app.api_route("/robots.txt", methods=["GET", "HEAD"], response_class=PlainTextResponse)
 async def get_robots_txt(request: Request) -> PlainTextResponse:
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "ulaach.cc"
     return PlainTextResponse(content=render_robots_txt(host), media_type="text/plain; charset=utf-8")
 
 
-@app.get("/sitemap.xml")
+@app.api_route("/sitemap.xml", methods=["GET", "HEAD"])
 async def get_sitemap_xml(request: Request) -> Response:
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "ulaach.cc"
     return Response(content=render_sitemap_xml(host), media_type="application/xml; charset=utf-8")
 
 
-@app.get("/favicon.svg")
-@app.get("/favicon.ico")
+@app.api_route("/favicon.svg", methods=["GET", "HEAD"])
+@app.api_route("/favicon.ico", methods=["GET", "HEAD"])
 async def get_favicon() -> Response:
     return Response(content=render_favicon_svg(), media_type="image/svg+xml; charset=utf-8")
 
 
-@app.get("/og-image.svg")
+@app.api_route("/og-image.svg", methods=["GET", "HEAD"])
 async def get_og_image(request: Request, site: str | None = Query(None)) -> Response:
     host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "ulaach.cc").split(":")[0].lower()
     target = (site or "").strip().lower()
@@ -1249,7 +1249,7 @@ async def get_forecast_json(
     )
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def index_page(request: Request, site: str | None = Query(None)) -> HTMLResponse:
     host_raw = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "ulaach.cc").split(":")[0].lower()
     target = (site or "").strip().lower()
