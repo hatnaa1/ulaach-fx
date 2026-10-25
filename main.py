@@ -170,6 +170,119 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── API хэрэглээг Umami (a.ulaach.cc, website «ulaach API») руу тоолох ─────────
+# /api/v1/* дуудлага бүрийг "api" custom event болгон background-д илгээнэ:
+# API-гийн хариуг хүлээлгэхгүй, Umami унтарсан ч API-д нөлөөлөхгүй.
+# Query string-ийн утгыг илгээхгүй (зөвхөн параметрийн нэрс).
+import json as _json
+import re as _re
+import time as _time
+import urllib.request as _urlreq
+
+_UMAMI_SEND_URL = os.environ.get("UMAMI_SEND_URL", "https://a.ulaach.cc/api/send")
+_UMAMI_API_WEBSITE = os.environ.get("UMAMI_API_WEBSITE_ID", "393f3015-c567-42e6-8cda-c67f7124b103")
+_UMAMI_API_ENABLED = os.environ.get("UMAMI_API_TRACKING", "1") != "0"
+# Umami нь curl/python зэрэг UA-г бот гэж хаядаг тул илгээхдээ энгийн UA ашиглаж,
+# жинхэнэ клиентийн төрлийг payload.browser-оор дамжуулна.
+_UMAMI_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+_umami_sem = asyncio.Semaphore(8)
+_umami_tasks: set[asyncio.Task] = set()
+
+_CLIENT_RULES = [
+    ("n8n", _re.compile(r"n8n", _re.I)),
+    ("curl", _re.compile(r"^curl/", _re.I)),
+    ("wget", _re.compile(r"wget", _re.I)),
+    ("python", _re.compile(r"python|aiohttp|httpx", _re.I)),
+    ("node", _re.compile(r"node|axios|undici|got\b", _re.I)),
+    ("go", _re.compile(r"Go-http-client", _re.I)),
+    ("postman", _re.compile(r"PostmanRuntime|insomnia", _re.I)),
+    ("bot", _re.compile(r"bot|crawler|spider|scan", _re.I)),
+    ("browser", _re.compile(r"Mozilla/", _re.I)),
+]
+
+
+def _api_client_kind(ua: str) -> str:
+    if not ua:
+        return "no-ua"
+    for name, rx in _CLIENT_RULES:
+        if rx.search(ua):
+            return name
+    return "other"
+
+
+def _umami_post(body: bytes) -> None:
+    req = _urlreq.Request(
+        _UMAMI_SEND_URL,
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json", "User-Agent": _UMAMI_UA},
+    )
+    try:
+        _urlreq.urlopen(req, timeout=5).read()
+    except Exception:
+        pass  # аналитик алдаа API-г хэзээ ч эвдэхгүй
+
+
+async def _umami_send(payload: dict) -> None:
+    if _umami_sem.locked():
+        return  # ачаалал ихтэй үед event-ийг хаяна, дараалал үүсгэхгүй
+    async with _umami_sem:
+        body = _json.dumps({"type": "event", "payload": payload}, ensure_ascii=False).encode()
+        await asyncio.to_thread(_umami_post, body)
+
+
+@app.middleware("http")
+async def _umami_api_usage(request: Request, call_next):
+    path = request.url.path
+    if not (_UMAMI_API_ENABLED and path.startswith("/api/v1/") and request.method == "GET"):
+        return await call_next(request)
+    t0 = _time.perf_counter()
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        return response
+    finally:
+        route = request.scope.get("route")
+        endpoint = getattr(route, "path", None)
+        # Бүртгэлгүй зам (сканнер) тоолохгүй
+        if endpoint:
+            ms = round((_time.perf_counter() - t0) * 1000)
+            h = request.headers
+            ua = h.get("user-agent", "")
+            ip = (
+                h.get("cf-connecting-ip")
+                or (h.get("x-forwarded-for", "").split(",")[0].strip())
+                or (request.client.host if request.client else "")
+            )
+            origin = h.get("origin") or h.get("referer") or ""
+            payload = {
+                "website": _UMAMI_API_WEBSITE,
+                "hostname": (h.get("host") or "ulaach.cc").split(":")[0],
+                "url": endpoint,
+                "title": endpoint,
+                "name": "api",
+                "ip": ip,
+                "userAgent": _UMAMI_UA,
+                "browser": _api_client_kind(ua),
+                "os": "api",
+                "device": "api",
+                "language": (h.get("accept-language") or "").split(",")[0][:20],
+                "data": {
+                    "endpoint": endpoint,
+                    "status": status,
+                    "ms": ms,
+                    "client": _api_client_kind(ua),
+                    "params": ",".join(sorted(request.query_params.keys()))[:100] or "-",
+                },
+            }
+            if origin:
+                payload["referrer"] = origin[:200]
+            task = asyncio.create_task(_umami_send(payload))
+            _umami_tasks.add(task)
+            task.add_done_callback(_umami_tasks.discard)
+
+
 os.makedirs("/app/static/img", exist_ok=True)
 app.mount("/img", StaticFiles(directory="/app/static/img"), name="img")
 
