@@ -893,6 +893,25 @@ _SEO_CONFIG: dict[str, dict[str, str]] = {
 }
 
 
+# Self-hosted Umami (https://a.ulaach.cc) — сайт бүр өөрийн website-id-тай.
+# Embed widget-үүд (/xansh.html, /weather.html) гадны сайт дээр ачаалагддаг тул энд хамаарахгүй.
+_UMAMI_SCRIPT = "https://a.ulaach.cc/insight.js"
+_UMAMI_IDS = {
+    "portal": "40b9df94-25dc-4f9d-84e6-3a1f10ffa281",
+    "fx": "f703c531-96f1-4874-b333-85372837c27e",
+    "weather": "344fd823-6959-47e6-8a48-989516001756",
+    "tool": "067c5fae-b9f7-459f-972e-1ab66ec34e00",
+    "util": "e0be8613-69d8-4b26-b058-03dbd9d1d58e",
+}
+
+
+def _umami_tag(active_site: str) -> str:
+    wid = _UMAMI_IDS.get(active_site)
+    if not wid:
+        return ""
+    return f'\n  <script defer src="{_UMAMI_SCRIPT}" data-website-id="{wid}"></script>'
+
+
 def build_seo_meta_html(active_site: str, title_override: str | None = None) -> str:
     cfg = _SEO_CONFIG.get(active_site, _SEO_CONFIG["portal"])
     title = title_override or cfg["title"]
@@ -965,7 +984,7 @@ def build_seo_meta_html(active_site: str, title_override: str | None = None) -> 
   <meta name="twitter:title" content="{html.escape(title)}" />
   <meta name="twitter:description" content="{html.escape(desc)}" />
   <meta name="twitter:image" content="{html.escape(og_img)}" />
-  <script type="application/ld+json">{json_ld_str}</script>"""
+  <script type="application/ld+json">{json_ld_str}</script>{_umami_tag(active_site)}"""
 
 
 def render_favicon_svg() -> str:
