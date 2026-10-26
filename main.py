@@ -283,6 +283,27 @@ async def _umami_api_usage(request: Request, call_next):
             task.add_done_callback(_umami_tasks.discard)
 
 
+# ── Хоосон query параметртэй GET хүсэлтийг цэвэр URL руу 301 redirect ────────
+# Googlebot inline JS-ээс '/dns?domain=' зэрэг string-ийг URL гэж олоод хоосон
+# утгатай шалгаж 400/422 авч байсан (Search Console: "Blocked due to other 4xx").
+# Хоосон параметрийг хасаж redirect хийснээр endpoint-ийн анхдагч утга хэрэглэгдэнэ.
+# /api/v1/* нь API тул хамаарахгүй (буруу оролтод 4xx буцаасаар байна).
+from urllib.parse import parse_qsl as _parse_qsl, urlencode as _urlencode
+from fastapi.responses import RedirectResponse as _RedirectResponse
+
+
+@app.middleware("http")
+async def _strip_empty_query_params(request: Request, call_next):
+    q = request.url.query
+    if request.method in ("GET", "HEAD") and q and not request.url.path.startswith("/api/"):
+        pairs = _parse_qsl(q, keep_blank_values=True)
+        kept = [(k, v) for k, v in pairs if v.strip() != ""]
+        if len(kept) != len(pairs):
+            target = request.url.path + (("?" + _urlencode(kept)) if kept else "")
+            return _RedirectResponse(target, status_code=301)
+    return await call_next(request)
+
+
 os.makedirs("/app/static/img", exist_ok=True)
 app.mount("/img", StaticFiles(directory="/app/static/img"), name="img")
 
@@ -2195,7 +2216,7 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
         var box = document.getElementById('fx-chart-box');
         if (!box) return;
         try {{
-          var res = await fetch('/history.json?currency=' + encodeURIComponent(cur) + '&days=35');
+          var res = await fetch('/history.json' + '?currency=' + encodeURIComponent(cur) + '&days=35');
           var rows = await res.json();
           if (!rows || rows.length < 2) {{
             box.textContent = 'Түүхэн өгөгдөл хүрэлцэхгүй байна.';

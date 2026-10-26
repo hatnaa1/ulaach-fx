@@ -1720,10 +1720,10 @@ def render_tool_page(request: Request) -> HTMLResponse:
       var target = document.getElementById('probe-target').value.trim() || 'ulaach.cc';
       var port = document.getElementById('probe-port').value.trim() || '443';
       var url = '';
-      if (kind === 'lookup') url = '/lookup?target=' + encodeURIComponent(target);
-      else if (kind === 'dns') url = '/dns?domain=' + encodeURIComponent(target);
-      else if (kind === 'ssl') url = '/ssl?domain=' + encodeURIComponent(target);
-      else if (kind === 'port') url = '/port?host=' + encodeURIComponent(target) + '&port=' + encodeURIComponent(port);
+      if (kind === 'lookup') url = '/lookup' + '?target=' + encodeURIComponent(target);
+      else if (kind === 'dns') url = '/dns' + '?domain=' + encodeURIComponent(target);
+      else if (kind === 'ssl') url = '/ssl' + '?domain=' + encodeURIComponent(target);
+      else if (kind === 'port') url = '/port' + '?host=' + encodeURIComponent(target) + '&port=' + encodeURIComponent(port);
       document.getElementById('probe-status').textContent = 'Running GET ' + url + ' ...';
       try {{
         var res = await fetch(url);
@@ -1896,13 +1896,13 @@ f'''{{
       if (kind === 'num2words') {{
         var amt = document.getElementById('u-amount').value.trim();
         var cur = document.getElementById('u-cur').value;
-        url = '/num2words?amount=' + encodeURIComponent(amt) + '&currency=' + encodeURIComponent(cur);
+        url = '/num2words' + '?amount=' + encodeURIComponent(amt) + '&currency=' + encodeURIComponent(cur);
       }} else if (kind === 'cyr2lat' || kind === 'lat2cyr') {{
         var txt = document.getElementById('u-text').value;
-        url = '/translit?text=' + encodeURIComponent(txt) + '&dir=' + kind;
+        url = '/translit' + '?text=' + encodeURIComponent(txt) + '&dir=' + kind;
       }} else if (kind === 'regno') {{
         var r = document.getElementById('u-regno').value.trim();
-        url = '/regno?regno=' + encodeURIComponent(r);
+        url = '/regno' + '?regno=' + encodeURIComponent(r);
       }}
       document.getElementById('u-status').textContent = 'Running GET ' + url + ' ...';
       var res = await fetch(url);
@@ -2764,7 +2764,7 @@ async def render_weather_page(wx_pool: asyncpg.Pool) -> HTMLResponse:
       var sidSel = document.getElementById('wx-sid-sel');
 
       function updateWxWidget() {{
-        var rel = '/weather.html?sid=' + encodeURIComponent(curSid) + '&lang=' + curLang + '&theme=' + curTheme;
+        var rel = '/weather.html' + '?sid=' + encodeURIComponent(curSid) + '&lang=' + curLang + '&theme=' + curTheme;
         frame.src = rel;
         codeEl.textContent = [
           '<iframe',
