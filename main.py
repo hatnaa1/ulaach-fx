@@ -1098,17 +1098,25 @@ async def convert_currency_api(
         for br in brows:
             nc_buy = Decimal(str(br["non_cash_buy"] or 0))
             nc_sell = Decimal(str(br["non_cash_sell"] or 0))
+            c_buy = Decimal(str(br["cash_buy"] or 0))
+            c_sell = Decimal(str(br["cash_sell"] or 0))
             if f_code != "MNT" and t_code == "MNT" and nc_buy > 0 and nc_sell > 0:
                 bank_conversions[br["bank"]] = {
                     "non_cash_buy_rate": float(nc_buy),
                     "non_cash_sell_rate": float(nc_sell),
+                    "cash_buy_rate": float(c_buy) if c_buy > 0 else None,
+                    "cash_sell_rate": float(c_sell) if c_sell > 0 else None,
                     "you_sell_fx_get_mnt": round(float(amt_dec * nc_buy), 2),
                     "you_buy_fx_pay_mnt": round(float(amt_dec * nc_sell), 2),
+                    "you_sell_fx_get_mnt_cash": round(float(amt_dec * c_buy), 2) if c_buy > 0 else None,
+                    "you_buy_fx_pay_mnt_cash": round(float(amt_dec * c_sell), 2) if c_sell > 0 else None,
                 }
             elif f_code == "MNT" and t_code != "MNT" and nc_sell > 0:
                 bank_conversions[br["bank"]] = {
                     "non_cash_sell_rate": float(nc_sell),
+                    "cash_sell_rate": float(c_sell) if c_sell > 0 else None,
                     "you_get_fx": round(float(amt_dec / nc_sell), 4),
+                    "you_get_fx_cash": round(float(amt_dec / c_sell), 4) if c_sell > 0 else None,
                 }
 
     return JSONResponse(
@@ -1450,10 +1458,18 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
         def _cell(b: str) -> str:
             row = bank_map.get((b, code))
             if not row:
-                return '<td class="muted center">—</td><td class="muted center">—</td>'
+                return (
+                    '<td class="muted center col-nc bank-sep">—</td><td class="muted center col-nc">—</td>'
+                    '<td class="muted center col-cash sub-sep">—</td><td class="muted center col-cash">—</td>'
+                )
             nc_b = _fmt_rate(row["non_cash_buy"]) if row["non_cash_buy"] else "—"
             nc_s = _fmt_rate(row["non_cash_sell"]) if row["non_cash_sell"] else "—"
-            return f'<td class="num buy">{nc_b}</td><td class="num sell">{nc_s}</td>'
+            c_b = _fmt_rate(row["cash_buy"]) if row["cash_buy"] else "—"
+            c_s = _fmt_rate(row["cash_sell"]) if row["cash_sell"] else "—"
+            return (
+                f'<td class="num buy col-nc bank-sep">{nc_b}</td><td class="num sell col-nc">{nc_s}</td>'
+                f'<td class="num buy col-cash sub-sep">{c_b}</td><td class="num sell col-cash">{c_s}</td>'
+            )
 
         bank_table_rows.append(
             f"<tr>"
@@ -1544,7 +1560,7 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
       z-index: 20;
     }}
     .topbar-inner {{
-      max-width: 1120px;
+      max-width: 1220px;
       margin: 0 auto;
       padding: 12px 24px;
       display: flex;
@@ -1597,7 +1613,7 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
       color: var(--brand);
     }}
     .container {{
-      max-width: 1120px;
+      max-width: 1220px;
       margin: 0 auto;
       padding: 28px 24px 72px;
     }}
@@ -1651,6 +1667,7 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
       padding: 22px 24px;
       margin-bottom: 20px;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+      scroll-margin-top: 76px;
     }}
     .section-head {{
       display: flex;
@@ -1906,6 +1923,36 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
       top: 0;
       z-index: 2;
     }}
+    .bank-table th, .bank-table td {{
+      padding: 7px 4.5px;
+      font-size: 11.5px;
+      white-space: nowrap;
+    }}
+    .bank-table .cur-name {{
+      font-size: 12px;
+    }}
+    .bank-sep {{
+      border-left: 1px solid var(--border-strong);
+    }}
+    .sub-sep {{
+      border-left: 1px dashed var(--border);
+    }}
+    .sub-head {{
+      font-size: 11px;
+      color: var(--ink);
+      background: rgba(15, 22, 36, 0.75);
+      text-transform: none;
+      letter-spacing: 0.01em;
+    }}
+    .bank-table[data-mode="non_cash"] .col-cash {{
+      display: none;
+    }}
+    .bank-table[data-mode="cash"] .col-nc {{
+      display: none;
+    }}
+    .bank-table[data-mode="cash"] .col-cash.sub-sep {{
+      border-left: 1px solid var(--border-strong);
+    }}
   </style>
 </head>
 <body>
@@ -2118,27 +2165,45 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
       </div>
     </section>
 
-    <!-- 03. Арилжааны банкуудын бэлэн бус ханшийн харьцуулалт -->
+    <!-- 03. Арилжааны банкуудын бэлэн ба бэлэн бус ханшийн харьцуулалт -->
     <section id="sec-3" class="section-card">
       <div class="section-head">
-        <h2 class="section-title"><span class="step-badge">03</span> Арилжааны банкуудын бэлэн бус ханшийн харьцуулалт</h2>
-        <span class="section-note">Шинэчлэгдсэн: {html.escape(latest_bank_hour)} (GET /banks.json)</span>
+        <h2 class="section-title"><span class="step-badge">03</span> Арилжааны банкуудын бэлэн ба бэлэн бус ханшийн харьцуулалт</h2>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <div class="lang-tabs" id="bank-rate-tabs">
+            <button type="button" class="lang-btn active" data-mode="all">Бүгд (Бэлэн бус + Бэлэн)</button>
+            <button type="button" class="lang-btn" data-mode="non_cash">Бэлэн бус</button>
+            <button type="button" class="lang-btn" data-mode="cash">Бэлэн</button>
+          </div>
+          <span class="section-note">Шинэчлэгдсэн: {html.escape(latest_bank_hour)} (GET /banks.json)</span>
+        </div>
       </div>
 
       <div style="overflow-x:auto;">
-        <table>
+        <table class="bank-table" id="bank-rates-table" data-mode="all">
           <thead>
             <tr>
-              <th rowspan="2">Валют</th>
-              <th rowspan="2" class="num">Монголбанк</th>
-              <th colspan="2" class="center">Хаан банк (Бэлэн бус)</th>
-              <th colspan="2" class="center">Голомт банк (Бэлэн бус)</th>
-              <th colspan="2" class="center">ХХБ (Бэлэн бус)</th>
+              <th rowspan="3">Валют</th>
+              <th rowspan="3" class="num">Монголбанк</th>
+              <th colspan="4" class="center bank-group-head bank-sep">Хаан банк</th>
+              <th colspan="4" class="center bank-group-head bank-sep">Голомт банк</th>
+              <th colspan="4" class="center bank-group-head bank-sep">ХХБ</th>
             </tr>
             <tr>
-              <th class="num">Авах</th><th class="num">Зарах</th>
-              <th class="num">Авах</th><th class="num">Зарах</th>
-              <th class="num">Авах</th><th class="num">Зарах</th>
+              <th colspan="2" class="center sub-head col-nc bank-sep">Бэлэн бус</th>
+              <th colspan="2" class="center sub-head col-cash sub-sep">Бэлэн</th>
+              <th colspan="2" class="center sub-head col-nc bank-sep">Бэлэн бус</th>
+              <th colspan="2" class="center sub-head col-cash sub-sep">Бэлэн</th>
+              <th colspan="2" class="center sub-head col-nc bank-sep">Бэлэн бус</th>
+              <th colspan="2" class="center sub-head col-cash sub-sep">Бэлэн</th>
+            </tr>
+            <tr>
+              <th class="num col-nc bank-sep">Авах</th><th class="num col-nc">Зарах</th>
+              <th class="num col-cash sub-sep">Авах</th><th class="num col-cash">Зарах</th>
+              <th class="num col-nc bank-sep">Авах</th><th class="num col-nc">Зарах</th>
+              <th class="num col-cash sub-sep">Авах</th><th class="num col-cash">Зарах</th>
+              <th class="num col-nc bank-sep">Авах</th><th class="num col-nc">Зарах</th>
+              <th class="num col-cash sub-sep">Авах</th><th class="num col-cash">Зарах</th>
             </tr>
           </thead>
           <tbody>
@@ -2250,6 +2315,22 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
           box.textContent = 'Chart error: ' + e;
         }}
       }}
+
+      document.querySelectorAll('#bank-rate-tabs .lang-btn').forEach(function(btn) {{
+        btn.addEventListener('click', function() {{
+          document.querySelectorAll('#bank-rate-tabs .lang-btn').forEach(function(b) {{ b.classList.remove('active'); }});
+          btn.classList.add('active');
+          var mode = btn.getAttribute('data-mode') || 'all';
+          var tbl = document.getElementById('bank-rates-table');
+          if (tbl) {{
+            tbl.setAttribute('data-mode', mode);
+            var span = (mode === 'all') ? '4' : '2';
+            tbl.querySelectorAll('.bank-group-head').forEach(function(th) {{
+              th.setAttribute('colspan', span);
+            }});
+          }}
+        }});
+      }});
 
       document.querySelectorAll('#chart-tabs .lang-btn').forEach(function(btn) {{
         btn.addEventListener('click', function() {{
