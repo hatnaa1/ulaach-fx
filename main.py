@@ -1244,11 +1244,15 @@ async def get_weather_json(
                 o.temp_max,
                 o.humidity,
                 o.wind_speed,
+                o.wind_max,
                 o.wind_dir,
+                o.pressure_st,
                 o.pressure_slp,
                 o.precip,
                 o.ww,
-                o.cloud_nh
+                o.cloud_nh,
+                o.snow_depth,
+                o.soil_tmin
             FROM wx.stations s
             LEFT JOIN LATERAL (
                 SELECT *
@@ -1288,9 +1292,13 @@ async def get_weather_json(
                 "temp_max_c": round(float(r["temp_max"]), 1) if r["temp_max"] is not None else None,
                 "humidity_pct": lv.get("humidity_pct") if lv.get("humidity_pct") is not None else r["humidity"],
                 "wind_ms": lv.get("wind_ms") if lv.get("wind_ms") is not None else (round(float(r["wind_speed"]), 1) if r["wind_speed"] is not None else None),
+                "wind_max_ms": round(float(r["wind_max"]), 1) if r["wind_max"] is not None else None,
                 "wind_dir_deg": lv.get("wind_dir_deg") if lv.get("wind_dir_deg") is not None else r["wind_dir"],
+                "pressure_st_hpa": round(float(r["pressure_st"]), 1) if r["pressure_st"] is not None else None,
                 "pressure_hpa": round(float(r["pressure_slp"]), 1) if r["pressure_slp"] is not None else lv.get("pressure_hpa"),
                 "precip_mm": round(float(r["precip"]), 2) if r["precip"] is not None else None,
+                "snow_depth_cm": round(float(r["snow_depth"]), 1) if r["snow_depth"] is not None else None,
+                "soil_tmin_c": round(float(r["soil_tmin"]), 1) if r["soil_tmin"] is not None else None,
                 "condition": lv.get("condition") or _ww_text(r["ww"], r["cloud_nh"]),
             }
         )
@@ -1344,6 +1352,7 @@ async def get_forecast_json(
 ) -> JSONResponse:
     wx_pool = await get_wx_pool()
     async with wx_pool.acquire() as conn:
+        st_row = await conn.fetchrow("SELECT sid, aimag_name, sum_name, sta_name, lat, lon, elev FROM wx.stations WHERE sid = $1", sid)
         fore_3h = await conn.fetch(
             """
             SELECT DISTINCT ON (f_time)
@@ -1359,10 +1368,23 @@ async def get_forecast_json(
         fore_day = await conn.fetch(
             """
             SELECT DISTINCT ON (fore_date)
-                fore_date, ww_code, precip_prob, temp_day, temp_day_feels, wind_day
+                fore_date, ww_code, precip_prob, temp_day, temp_day_feels, wind_day,
+                temp_night, temp_night_feels, wind_night, ww_night, precip_prob_night,
+                pheno_day, pheno_night
             FROM wx.fore_day
-            WHERE sid = $1 AND fore_date >= CURRENT_DATE - INTERVAL '1 day'
-            ORDER BY fore_date ASC, issued_at DESC
+            WHERE sid = $1 AND fore_date >= CURRENT_DATE
+            ORDER BY fore_date ASC, (temp_night IS NOT NULL) DESC, issued_at DESC
+            LIMIT 7
+            """,
+            sid,
+        )
+        acc_rows = await conn.fetch(
+            """
+            SELECT DISTINCT ON (fore_date)
+                fore_date, lead_days, forecast_temp, actual_temp_max, error_c, abs_error_c
+            FROM wx.v_forecast_accuracy
+            WHERE sid = $1 AND lead_days BETWEEN 0 AND 3
+            ORDER BY fore_date DESC, lead_days ASC
             LIMIT 7
             """,
             sid,
@@ -1370,6 +1392,9 @@ async def get_forecast_json(
     return JSONResponse(
         content={
             "sid": sid,
+            "station": st_row["sta_name"] if st_row else None,
+            "aimag": st_row["aimag_name"] if st_row else None,
+            "sum": st_row["sum_name"] if st_row else None,
             "hourly_3h": [
                 {
                     "time": r["f_time_ub"].strftime("%Y-%m-%d %H:%M:%S") if r["f_time_ub"] else None,
@@ -1385,12 +1410,28 @@ async def get_forecast_json(
                 {
                     "date": r["fore_date"].isoformat(),
                     "temp_day_c": round(float(r["temp_day"]), 1) if r["temp_day"] is not None else None,
-                    "feels_c": round(float(r["temp_day_feels"]), 1) if r["temp_day_feels"] is not None else None,
-                    "wind_ms": round(float(r["wind_day"]), 1) if r["wind_day"] is not None else None,
-                    "precip_prob_pct": r["precip_prob"],
-                    "condition": _ww_text(r["ww_code"]),
+                    "temp_night_c": round(float(r["temp_night"]), 1) if r["temp_night"] is not None else None,
+                    "feels_day_c": round(float(r["temp_day_feels"]), 1) if r["temp_day_feels"] is not None else None,
+                    "feels_night_c": round(float(r["temp_night_feels"]), 1) if r["temp_night_feels"] is not None else None,
+                    "wind_day_ms": round(float(r["wind_day"]), 1) if r["wind_day"] is not None else None,
+                    "wind_night_ms": round(float(r["wind_night"]), 1) if r["wind_night"] is not None else None,
+                    "precip_prob_day_pct": r["precip_prob"],
+                    "precip_prob_night_pct": r["precip_prob_night"],
+                    "condition_day": r["pheno_day"] or _ww_text(r["ww_code"]),
+                    "condition_night": r["pheno_night"] or _ww_text(r["ww_night"]),
                 }
                 for r in fore_day
+            ],
+            "recent_accuracy": [
+                {
+                    "date": r["fore_date"].isoformat(),
+                    "lead_days": r["lead_days"],
+                    "forecast_temp_c": round(float(r["forecast_temp"]), 1) if r["forecast_temp"] is not None else None,
+                    "actual_temp_max_c": round(float(r["actual_temp_max"]), 1) if r["actual_temp_max"] is not None else None,
+                    "error_c": round(float(r["error_c"]), 1) if r["error_c"] is not None else None,
+                    "abs_error_c": round(float(r["abs_error_c"]), 1) if r["abs_error_c"] is not None else None,
+                }
+                for r in acc_rows
             ],
         }
     )
