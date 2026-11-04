@@ -2037,19 +2037,35 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
         </div>
       </div>
 
-      <div style="margin: 14px 20px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
-          <span class="mono" style="font-size:12px;color:var(--ink-bright);font-weight:600;">📈 30 ХОНОГИЙН ХАНШИЙН ХӨДӨЛГӨӨН (GET /history.json)</span>
-          <div class="lang-tabs" id="chart-tabs">
-            <button type="button" class="lang-btn active" data-cur="USD">USD</button>
-            <button type="button" class="lang-btn" data-cur="EUR">EUR</button>
-            <button type="button" class="lang-btn" data-cur="CNY">CNY</button>
-            <button type="button" class="lang-btn" data-cur="RUB">RUB</button>
-            <button type="button" class="lang-btn" data-cur="JPY">JPY</button>
-            <button type="button" class="lang-btn" data-cur="KRW">KRW</button>
+      <div style="margin: 14px 20px; background: linear-gradient(180deg, rgba(15,23,42,0.85) 0%, rgba(7,10,18,0.95) 100%); border: 1px solid var(--border-strong); border-radius: 10px; padding: 16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
+          <div>
+            <div class="mono" style="font-size:12.5px;color:var(--ink-bright);font-weight:700;display:flex;align-items:center;gap:8px;">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--brand);box-shadow:0 0 8px var(--brand);"></span>
+              ТҮҮХЭН ХАНШИЙН ИНТЕРАКТИВ ГРАФИК — amCharts 5 (GET /history.json)
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-top:2px;">Хулганаар чирж томруулах (Zoom), гүйлгэж харах (Scrollbar), огноо тус бүрийн нарийвчилсан ханш харах боломжтой</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div class="lang-tabs" id="chart-tabs">
+              <button type="button" class="lang-btn active" data-cur="USD">USD</button>
+              <button type="button" class="lang-btn" data-cur="EUR">EUR</button>
+              <button type="button" class="lang-btn" data-cur="CNY">CNY</button>
+              <button type="button" class="lang-btn" data-cur="RUB">RUB</button>
+              <button type="button" class="lang-btn" data-cur="JPY">JPY</button>
+              <button type="button" class="lang-btn" data-cur="KRW">KRW</button>
+              <button type="button" class="lang-btn" data-cur="GBP">GBP</button>
+            </div>
+            <div class="lang-tabs" id="chart-days-tabs">
+              <button type="button" class="lang-btn" data-days="30">1С</button>
+              <button type="button" class="lang-btn active" data-days="90">3С</button>
+              <button type="button" class="lang-btn" data-days="180">6С</button>
+              <button type="button" class="lang-btn" data-days="365">1Ж</button>
+            </div>
           </div>
         </div>
-        <div id="fx-chart-box" style="width:100%;height:140px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:12px;">Loading chart...</div>
+        <div id="fx-chart-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px;"></div>
+        <div id="fx-amchart-div" style="width:100%;height:340px;position:relative;"></div>
       </div>
 
       <div class="code-grid">
@@ -2240,6 +2256,10 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
     </section>
   </div>
 
+  <script src="https://cdn.amcharts.com/lib/5/index.js"></script>
+  <script src="https://cdn.amcharts.com/lib/5/xy.js"></script>
+  <script src="https://cdn.amcharts.com/lib/5/themes/Animated.js"></script>
+  <script src="https://cdn.amcharts.com/lib/5/themes/Dark.js"></script>
   <script>
     (function() {{
       var curLang = 'MN';
@@ -2277,42 +2297,280 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
         }});
       }});
 
-      async function loadChart(cur) {{
-        var box = document.getElementById('fx-chart-box');
-        if (!box) return;
-        try {{
-          var res = await fetch('/history.json' + '?currency=' + encodeURIComponent(cur) + '&days=35');
-          var rows = await res.json();
-          if (!rows || rows.length < 2) {{
-            box.textContent = 'Түүхэн өгөгдөл хүрэлцэхгүй байна.';
-            return;
+      var selectedCur = 'USD';
+      var selectedDays = 90;
+      var amRoot = null;
+      var amSeries = null;
+      var amSbSeries = null;
+
+      function fmtNum(v) {{
+        return Number(v).toLocaleString('en-US', {{minimumFractionDigits: 2, maximumFractionDigits: 2}});
+      }}
+
+      function renderStats(cur, rows) {{
+        var statsEl = document.getElementById('fx-chart-stats');
+        if (!statsEl || !rows || !rows.length) return;
+        var vals = rows.map(function(r) {{ return Number(r.rate_float); }});
+        var first = vals[0];
+        var last = vals[vals.length - 1];
+        var minV = Math.min.apply(null, vals);
+        var maxV = Math.max.apply(null, vals);
+        var avgV = vals.reduce(function(a, b) {{ return a + b; }}, 0) / vals.length;
+        var diff = last - first;
+        var pct = first > 0 ? (diff / first) * 100 : 0;
+        var isUp = diff >= 0;
+        var color = isUp ? '#10b981' : '#f43f5e';
+        var sign = isUp ? '+' : '';
+        var curName = rows[rows.length - 1].name || cur;
+
+        var cardStyle = 'background:rgba(15,22,36,0.9);border:1px solid var(--border);border-radius:8px;padding:9px 12px;';
+        var lblStyle = 'font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;margin-bottom:2px;';
+        var valStyle = 'font-size:15px;font-weight:700;font-family:var(--mono);color:var(--ink-bright);';
+
+        statsEl.innerHTML = [
+          '<div style="' + cardStyle + '"><div style="' + lblStyle + '">' + cur + ' • ОДООГИЙН ХАНШ</div><div style="' + valStyle + 'color:#38bdf8;">' + fmtNum(last) + ' ₮ <span style="font-size:11px;font-weight:400;color:var(--muted);">(' + curName + ')</span></div></div>',
+          '<div style="' + cardStyle + '"><div style="' + lblStyle + '">' + selectedDays + ' ХОНОГИЙН ӨӨРЧЛӨЛТ</div><div style="' + valStyle + 'color:' + color + ';">' + (isUp ? '▲ ' : '▼ ') + sign + fmtNum(diff) + ' ₮ (' + sign + pct.toFixed(2) + '%)</div></div>',
+          '<div style="' + cardStyle + '"><div style="' + lblStyle + '">ХАМГИЙН БАГА (MIN)</div><div style="' + valStyle + '">' + fmtNum(minV) + ' ₮</div></div>',
+          '<div style="' + cardStyle + '"><div style="' + lblStyle + '">ХАМГИЙН ИХ (MAX)</div><div style="' + valStyle + '">' + fmtNum(maxV) + ' ₮</div></div>',
+          '<div style="' + cardStyle + '"><div style="' + lblStyle + '">ДУНДАЖ ХАНШ (AVG)</div><div style="' + valStyle + '">' + fmtNum(avgV) + ' ₮</div></div>'
+        ].join('');
+      }}
+
+      function initOrUpdateAmChart(cur, rows) {{
+        var chartDiv = document.getElementById('fx-amchart-div');
+        if (!chartDiv || typeof am5 === 'undefined') return;
+
+        var data = rows.map(function(r) {{
+          var parts = r.rate_date.split('-');
+          var dt = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0).getTime();
+          return {{
+            date: dt,
+            dateStr: r.rate_date,
+            value: Number(r.rate_float),
+            code: r.code
+          }};
+        }});
+
+        var isUp = data.length < 2 || data[data.length - 1].value >= data[0].value;
+        var mainHex = isUp ? 0x10b981 : 0xf43f5e;
+
+        if (!amRoot) {{
+          amRoot = am5.Root.new('fx-amchart-div');
+          if (amRoot._logo) {{
+            amRoot._logo.dispose();
           }}
-          var vals = rows.map(function(r) {{ return Number(r.rate_float); }});
-          var dates = rows.map(function(r) {{ return r.rate_date; }});
-          var minV = Math.min.apply(null, vals);
-          var maxV = Math.max.apply(null, vals);
-          var span = (maxV - minV) || 1;
-          var w = 960, h = 115, padX = 12, padY = 16;
-          var pts = vals.map(function(v, i) {{
-            var x = padX + (i / (vals.length - 1)) * (w - padX * 2);
-            var y = h - padY - ((v - minV) / span) * (h - padY * 2);
-            return x.toFixed(1) + ',' + y.toFixed(1);
-          }}).join(' ');
-          var first = vals[0], last = vals[vals.length - 1];
-          var diff = (last - first).toFixed(2);
-          var stroke = last >= first ? '#34d399' : '#f43f5e';
-          box.innerHTML =
-            '<div style="width:100%;">' +
-            '<div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-bottom:4px;">' +
-            '<span>' + cur + '/MNT (' + dates[0] + ' → ' + dates[dates.length-1] + ')</span>' +
-            '<span>Min: <strong style="color:#e2e8f0">' + minV.toFixed(2) + '</strong> • Max: <strong style="color:#e2e8f0">' + maxV.toFixed(2) + '</strong> • Latest: <strong style="color:' + stroke + '">' + last.toFixed(2) + ' ₮ (' + (diff >= 0 ? '+' : '') + diff + ')</strong></span>' +
-            '</div>' +
-            '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%;height:110px;overflow:visible;">' +
-            '<polyline fill="none" stroke="' + stroke + '" stroke-width="2.4" points="' + pts + '" />' +
-            '</svg>' +
-            '</div>';
+          amRoot.setThemes([
+            am5themes_Animated.new(amRoot),
+            am5themes_Dark.new(amRoot)
+          ]);
+
+          var chart = amRoot.container.children.push(
+            am5xy.XYChart.new(amRoot, {{
+              panX: true,
+              panY: false,
+              wheelX: 'panX',
+              wheelY: 'zoomX',
+              pinchZoomX: true,
+              paddingLeft: 0,
+              paddingRight: 10,
+              paddingTop: 10,
+              paddingBottom: 0
+            }})
+          );
+
+          var cursor = chart.set('cursor', am5xy.XYCursor.new(amRoot, {{
+            behavior: 'zoomX'
+          }}));
+          cursor.lineY.set('visible', false);
+          cursor.lineX.setAll({{
+            stroke: am5.color(0x38bdf8),
+            strokeWidth: 1,
+            strokeDasharray: [4, 4]
+          }});
+
+          var xRenderer = am5xy.AxisRendererX.new(amRoot, {{
+            minorGridEnabled: true,
+            minGridDistance: 70
+          }});
+          xRenderer.labels.template.setAll({{
+            fill: am5.color(0x94a3b8),
+            fontSize: 11,
+            fontFamily: 'JetBrains Mono, monospace'
+          }});
+          xRenderer.grid.template.setAll({{
+            stroke: am5.color(0x1e293b),
+            strokeOpacity: 0.7
+          }});
+
+          var xAxis = chart.xAxes.push(
+            am5xy.DateAxis.new(amRoot, {{
+              maxDeviation: 0.1,
+              baseInterval: {{ timeUnit: 'day', count: 1 }},
+              renderer: xRenderer,
+              tooltip: am5.Tooltip.new(amRoot, {{}})
+            }})
+          );
+
+          var yRenderer = am5xy.AxisRendererY.new(amRoot, {{
+            opposite: false
+          }});
+          yRenderer.labels.template.setAll({{
+            fill: am5.color(0x94a3b8),
+            fontSize: 11,
+            fontFamily: 'JetBrains Mono, monospace'
+          }});
+          yRenderer.grid.template.setAll({{
+            stroke: am5.color(0x1e293b),
+            strokeOpacity: 0.7
+          }});
+
+          var yAxis = chart.yAxes.push(
+            am5xy.ValueAxis.new(amRoot, {{
+              maxDeviation: 0.1,
+              extraMin: 0.08,
+              extraMax: 0.08,
+              renderer: yRenderer
+            }})
+          );
+
+          var tooltip = am5.Tooltip.new(amRoot, {{
+            getFillFromSprite: false,
+            labelText: '[bold]{code}/MNT[/]\nОгноо: {dateStr}\nАлбан ханш: [bold]{value.formatNumber("#,###.00")} ₮[/]'
+          }});
+          tooltip.get('background').setAll({{
+            fill: am5.color(0x0f1624),
+            fillOpacity: 0.96,
+            stroke: am5.color(mainHex),
+            strokeWidth: 1.5,
+            cornerRadius: 8
+          }});
+          tooltip.label.setAll({{
+            fill: am5.color(0xf8fafc),
+            fontSize: 12,
+            fontFamily: 'JetBrains Mono, monospace'
+          }});
+
+          amSeries = chart.series.push(
+            am5xy.SmoothedXLineSeries.new(amRoot, {{
+              name: cur,
+              xAxis: xAxis,
+              yAxis: yAxis,
+              valueYField: 'value',
+              valueXField: 'date',
+              tooltip: tooltip,
+              stroke: am5.color(mainHex),
+              fill: am5.color(mainHex),
+              tension: 0.35
+            }})
+          );
+
+          amSeries.strokes.template.setAll({{
+            strokeWidth: 2.6
+          }});
+
+          amSeries.fills.template.setAll({{
+            visible: true,
+            fillGradient: am5.LinearGradient.new(amRoot, {{
+              stops: [
+                {{ color: am5.color(mainHex), opacity: 0.36 }},
+                {{ color: am5.color(mainHex), opacity: 0.01 }}
+              ],
+              rotation: 90
+            }})
+          }});
+
+          amSeries.bullets.push(function() {{
+            var circle = am5.Circle.new(amRoot, {{
+              radius: 3.5,
+              fill: am5.color(0x0b0f17),
+              stroke: amSeries.get('stroke'),
+              strokeWidth: 2,
+              interactive: true
+            }});
+            circle.states.create('hover', {{
+              scale: 1.6,
+              fill: amSeries.get('stroke')
+            }});
+            return am5.Bullet.new(amRoot, {{
+              sprite: circle
+            }});
+          }});
+
+          var scrollbar = am5xy.XYChartScrollbar.new(amRoot, {{
+            orientation: 'horizontal',
+            height: 44
+          }});
+          chart.set('scrollbarX', scrollbar);
+          scrollbar.get('background').setAll({{
+            fill: am5.color(0x070a12),
+            fillOpacity: 0.9,
+            stroke: am5.color(0x1e293b)
+          }});
+
+          var sbDateAxis = scrollbar.chart.xAxes.push(
+            am5xy.DateAxis.new(amRoot, {{
+              baseInterval: {{ timeUnit: 'day', count: 1 }},
+              renderer: am5xy.AxisRendererX.new(amRoot, {{}})
+            }})
+          );
+          sbDateAxis.get('renderer').labels.template.setAll({{
+            fill: am5.color(0x64748b),
+            fontSize: 10
+          }});
+
+          var sbValueAxis = scrollbar.chart.yAxes.push(
+            am5xy.ValueAxis.new(amRoot, {{
+              renderer: am5xy.AxisRendererY.new(amRoot, {{}})
+            }})
+          );
+
+          amSbSeries = scrollbar.chart.series.push(
+            am5xy.LineSeries.new(amRoot, {{
+              valueYField: 'value',
+              valueXField: 'date',
+              xAxis: sbDateAxis,
+              yAxis: sbValueAxis,
+              stroke: am5.color(0x38bdf8),
+              fill: am5.color(0x38bdf8)
+            }})
+          );
+          amSbSeries.fills.template.setAll({{
+            visible: true,
+            fillOpacity: 0.15
+          }});
+        }}
+
+        amSeries.set('stroke', am5.color(mainHex));
+        amSeries.set('fill', am5.color(mainHex));
+        amSeries.fills.template.set('fillGradient', am5.LinearGradient.new(amRoot, {{
+          stops: [
+            {{ color: am5.color(mainHex), opacity: 0.36 }},
+            {{ color: am5.color(mainHex), opacity: 0.01 }}
+          ],
+          rotation: 90
+        }}));
+        if (amSeries.get('tooltip') && amSeries.get('tooltip').get('background')) {{
+          amSeries.get('tooltip').get('background').set('stroke', am5.color(mainHex));
+        }}
+
+        amSeries.data.setAll(data);
+        if (amSbSeries) {{
+          amSbSeries.data.setAll(data);
+        }}
+        amSeries.appear(600);
+      }}
+
+      async function loadChart(cur, days) {{
+        selectedCur = cur || selectedCur;
+        selectedDays = days || selectedDays;
+        try {{
+          var res = await fetch('/history.json?currency=' + encodeURIComponent(selectedCur) + '&days=' + selectedDays);
+          var rows = await res.json();
+          if (!rows || rows.length < 2) return;
+          renderStats(selectedCur, rows);
+          initOrUpdateAmChart(selectedCur, rows);
         }} catch (e) {{
-          box.textContent = 'Chart error: ' + e;
+          console.error('Chart error:', e);
         }}
       }}
 
@@ -2336,10 +2594,19 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
         btn.addEventListener('click', function() {{
           document.querySelectorAll('#chart-tabs .lang-btn').forEach(function(b) {{ b.classList.remove('active'); }});
           btn.classList.add('active');
-          loadChart(btn.getAttribute('data-cur'));
+          loadChart(btn.getAttribute('data-cur'), selectedDays);
         }});
       }});
-      loadChart('USD');
+
+      document.querySelectorAll('#chart-days-tabs .lang-btn').forEach(function(btn) {{
+        btn.addEventListener('click', function() {{
+          document.querySelectorAll('#chart-days-tabs .lang-btn').forEach(function(b) {{ b.classList.remove('active'); }});
+          btn.classList.add('active');
+          loadChart(selectedCur, Number(btn.getAttribute('data-days') || 90));
+        }});
+      }});
+
+      loadChart('USD', 90);
     }})();
   </script>
 </body>
