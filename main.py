@@ -1389,12 +1389,82 @@ async def get_forecast_json(
             """,
             sid,
         )
+        obs_7d_rows = await conn.fetch(
+            """
+            SELECT DISTINCT ON (date_trunc('hour', obs_time AT TIME ZONE 'Asia/Ulaanbaatar'))
+                (obs_time AT TIME ZONE 'Asia/Ulaanbaatar')::date AS obs_date,
+                EXTRACT(HOUR FROM (obs_time AT TIME ZONE 'Asia/Ulaanbaatar'))::int AS obs_hour,
+                temp,
+                temp_feels,
+                humidity,
+                wind_speed,
+                wind_max,
+                pressure_slp,
+                precip,
+                ww,
+                cloud_nh
+            FROM wx.obs_data
+            WHERE sid = $1
+              AND (obs_time AT TIME ZONE 'Asia/Ulaanbaatar')::date > (NOW() AT TIME ZONE 'Asia/Ulaanbaatar')::date - INTERVAL '7 days'
+              AND (obs_time AT TIME ZONE 'Asia/Ulaanbaatar')::date <= (NOW() AT TIME ZONE 'Asia/Ulaanbaatar')::date
+            ORDER BY date_trunc('hour', obs_time AT TIME ZONE 'Asia/Ulaanbaatar') ASC, obs_time DESC
+            """,
+            sid,
+        )
+
+    mn_weekdays = ["Даваа", "Мягмар", "Лхагва", "Пүрэв", "Баасан", "Бямба", "Ням"]
+    ub_today = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=8)).date()
+    days_7 = [ub_today - datetime.timedelta(days=i) for i in range(6, -1, -1)]
+    hours_24 = [f"{h:02d}:00" for h in range(24)]
+
+    obs_by_dh: dict[tuple[datetime.date, int], Any] = {}
+    for r in obs_7d_rows:
+        obs_by_dh[(r["obs_date"], int(r["obs_hour"]))] = r
+
+    heatmap_cells = []
+    day_labels_ordered = []
+    for d_obj in reversed(days_7):
+        wname = mn_weekdays[d_obj.weekday()]
+        d_label = f"{d_obj.strftime('%m-%d')} ({wname})"
+        day_labels_ordered.append(d_label)
+        # Fill missing hours by nearest known hour in that day (for 3-hourly SYNOP stations)
+        known_hours = sorted([h for (dt, h) in obs_by_dh.keys() if dt == d_obj])
+        for h_int in range(24):
+            h_str = f"{h_int:02d}:00"
+            row_h = obs_by_dh.get((d_obj, h_int))
+            interpolated = False
+            if row_h is None and known_hours:
+                # only interpolate up to the latest observed hour on today
+                max_known = max(known_hours)
+                if d_obj < ub_today or h_int <= max_known:
+                    nearest_h = min(known_hours, key=lambda kh: abs(kh - h_int))
+                    if abs(nearest_h - h_int) <= 2:
+                        row_h = obs_by_dh.get((d_obj, nearest_h))
+                        interpolated = True
+            if row_h is not None and row_h["temp"] is not None:
+                heatmap_cells.append(
+                    {
+                        "day": d_label,
+                        "date": d_obj.isoformat(),
+                        "hour": h_str,
+                        "value": round(float(row_h["temp"]), 1),
+                        "feels_c": round(float(row_h["temp_feels"]), 1) if row_h["temp_feels"] is not None else round(float(row_h["temp"]), 1),
+                        "humidity_pct": row_h["humidity"],
+                        "wind_ms": round(float(row_h["wind_speed"]), 1) if row_h["wind_speed"] is not None else 0.0,
+                        "condition": _ww_text(row_h["ww"], row_h["cloud_nh"]),
+                        "interpolated": interpolated,
+                    }
+                )
+
     return JSONResponse(
         content={
             "sid": sid,
             "station": st_row["sta_name"] if st_row else None,
             "aimag": st_row["aimag_name"] if st_row else None,
             "sum": st_row["sum_name"] if st_row else None,
+            "heatmap_days": day_labels_ordered,
+            "heatmap_hours": hours_24,
+            "heatmap_7d_24h": heatmap_cells,
             "hourly_3h": [
                 {
                     "time": r["f_time_ub"].strftime("%Y-%m-%d %H:%M:%S") if r["f_time_ub"] else None,
