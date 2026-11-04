@@ -2435,7 +2435,7 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
 
           var tooltip = am5.Tooltip.new(amRoot, {{
             getFillFromSprite: false,
-            labelText: '[bold]{code}/MNT[/]\nОгноо: {dateStr}\nАлбан ханш: [bold]{value.formatNumber("#,###.00")} ₮[/]'
+            labelText: '[bold]{{code}}/MNT[/]\\nОгноо: {{dateStr}}\\nАлбан ханш: [bold]{{value.formatNumber("#,###.00")}} ₮[/]'
           }});
           tooltip.get('background').setAll({{
             fill: am5.color(0x0f1624),
