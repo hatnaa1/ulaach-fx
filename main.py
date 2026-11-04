@@ -1395,7 +1395,6 @@ async def get_forecast_json(
                 (obs_time AT TIME ZONE 'Asia/Ulaanbaatar')::date AS obs_date,
                 EXTRACT(HOUR FROM (obs_time AT TIME ZONE 'Asia/Ulaanbaatar'))::int AS obs_hour,
                 temp,
-                temp_feels,
                 humidity,
                 wind_speed,
                 wind_max,
@@ -1442,15 +1441,18 @@ async def get_forecast_json(
                         row_h = obs_by_dh.get((d_obj, nearest_h))
                         interpolated = True
             if row_h is not None and row_h["temp"] is not None:
+                tc = round(float(row_h["temp"]), 1)
+                ws = round(float(row_h["wind_speed"]), 1) if row_h["wind_speed"] is not None else 0.0
+                feels_est = round(tc - (ws * 0.7), 1)
                 heatmap_cells.append(
                     {
                         "day": d_label,
                         "date": d_obj.isoformat(),
                         "hour": h_str,
-                        "value": round(float(row_h["temp"]), 1),
-                        "feels_c": round(float(row_h["temp_feels"]), 1) if row_h["temp_feels"] is not None else round(float(row_h["temp"]), 1),
+                        "value": tc,
+                        "feels_c": feels_est,
                         "humidity_pct": row_h["humidity"],
-                        "wind_ms": round(float(row_h["wind_speed"]), 1) if row_h["wind_speed"] is not None else 0.0,
+                        "wind_ms": ws,
                         "condition": _ww_text(row_h["ww"], row_h["cloud_nh"]),
                         "interpolated": interpolated,
                     }
