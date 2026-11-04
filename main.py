@@ -2402,12 +2402,29 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
             strokeOpacity: 0.7
           }});
 
+          var xAxisTooltip = am5.Tooltip.new(amRoot, {{
+            getFillFromSprite: false,
+            autoTextColor: false
+          }});
+          xAxisTooltip.get('background').setAll({{
+            fill: am5.color(0x0f1624),
+            fillOpacity: 0.96,
+            stroke: am5.color(0x38bdf8),
+            strokeWidth: 1,
+            cornerRadius: 6
+          }});
+          xAxisTooltip.label.setAll({{
+            fill: am5.color(0xf8fafc),
+            fontSize: 11,
+            fontFamily: 'JetBrains Mono, monospace'
+          }});
+
           var xAxis = chart.xAxes.push(
             am5xy.DateAxis.new(amRoot, {{
               maxDeviation: 0.1,
               baseInterval: {{ timeUnit: 'day', count: 1 }},
               renderer: xRenderer,
-              tooltip: am5.Tooltip.new(amRoot, {{}})
+              tooltip: xAxisTooltip
             }})
           );
 
@@ -2435,7 +2452,8 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
 
           var tooltip = am5.Tooltip.new(amRoot, {{
             getFillFromSprite: false,
-            labelText: '[bold]{{code}}/MNT[/]\\nОгноо: {{dateStr}}\\nАлбан ханш: [bold]{{value.formatNumber("#,###.00")}} ₮[/]'
+            autoTextColor: false,
+            labelText: '[bold #38bdf8]{{code}}/MNT[/]\\n[#94a3b8]Огноо:[/] [bold #ffffff]{{dateStr}}[/]\\n[#94a3b8]Албан ханш:[/] [bold #10b981]{{value.formatNumber("#,###.00")}} ₮[/]'
           }});
           tooltip.get('background').setAll({{
             fill: am5.color(0x0f1624),
@@ -2445,7 +2463,7 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
             cornerRadius: 8
           }});
           tooltip.label.setAll({{
-            fill: am5.color(0xf8fafc),
+            fill: am5.color(0xffffff),
             fontSize: 12,
             fontFamily: 'JetBrains Mono, monospace'
           }});
