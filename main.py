@@ -1459,16 +1459,16 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
             row = bank_map.get((b, code))
             if not row:
                 return (
-                    '<td class="muted center col-nc bank-sep">—</td><td class="muted center col-nc">—</td>'
-                    '<td class="muted center col-cash sub-sep">—</td><td class="muted center col-cash">—</td>'
+                    '<td class="muted center col-cash bank-sep">—</td><td class="muted center col-cash">—</td>'
+                    '<td class="muted center col-nc sub-sep">—</td><td class="muted center col-nc">—</td>'
                 )
             nc_b = _fmt_rate(row["non_cash_buy"]) if row["non_cash_buy"] else "—"
             nc_s = _fmt_rate(row["non_cash_sell"]) if row["non_cash_sell"] else "—"
             c_b = _fmt_rate(row["cash_buy"]) if row["cash_buy"] else "—"
             c_s = _fmt_rate(row["cash_sell"]) if row["cash_sell"] else "—"
             return (
-                f'<td class="num buy col-nc bank-sep">{nc_b}</td><td class="num sell col-nc">{nc_s}</td>'
-                f'<td class="num buy col-cash sub-sep">{c_b}</td><td class="num sell col-cash">{c_s}</td>'
+                f'<td class="num buy col-cash bank-sep">{c_b}</td><td class="num sell col-cash">{c_s}</td>'
+                f'<td class="num buy col-nc sub-sep">{nc_b}</td><td class="num sell col-nc">{nc_s}</td>'
             )
 
         bank_table_rows.append(
@@ -1950,7 +1950,7 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
     .bank-table[data-mode="cash"] .col-nc {{
       display: none;
     }}
-    .bank-table[data-mode="cash"] .col-cash.sub-sep {{
+    .bank-table[data-mode="non_cash"] .col-nc.sub-sep {{
       border-left: 1px solid var(--border-strong);
     }}
   </style>
@@ -2171,9 +2171,9 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
         <h2 class="section-title"><span class="step-badge">03</span> Арилжааны банкуудын бэлэн ба бэлэн бус ханшийн харьцуулалт</h2>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
           <div class="lang-tabs" id="bank-rate-tabs">
-            <button type="button" class="lang-btn active" data-mode="all">Бүгд (Бэлэн бус + Бэлэн)</button>
-            <button type="button" class="lang-btn" data-mode="non_cash">Бэлэн бус</button>
+            <button type="button" class="lang-btn active" data-mode="all">Бүгд (Бэлэн + Бэлэн бус)</button>
             <button type="button" class="lang-btn" data-mode="cash">Бэлэн</button>
+            <button type="button" class="lang-btn" data-mode="non_cash">Бэлэн бус</button>
           </div>
           <span class="section-note">Шинэчлэгдсэн: {html.escape(latest_bank_hour)} (GET /banks.json)</span>
         </div>
@@ -2190,20 +2190,20 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
               <th colspan="4" class="center bank-group-head bank-sep">ХХБ</th>
             </tr>
             <tr>
-              <th colspan="2" class="center sub-head col-nc bank-sep">Бэлэн бус</th>
-              <th colspan="2" class="center sub-head col-cash sub-sep">Бэлэн</th>
-              <th colspan="2" class="center sub-head col-nc bank-sep">Бэлэн бус</th>
-              <th colspan="2" class="center sub-head col-cash sub-sep">Бэлэн</th>
-              <th colspan="2" class="center sub-head col-nc bank-sep">Бэлэн бус</th>
-              <th colspan="2" class="center sub-head col-cash sub-sep">Бэлэн</th>
+              <th colspan="2" class="center sub-head col-cash bank-sep">Бэлэн</th>
+              <th colspan="2" class="center sub-head col-nc sub-sep">Бэлэн бус</th>
+              <th colspan="2" class="center sub-head col-cash bank-sep">Бэлэн</th>
+              <th colspan="2" class="center sub-head col-nc sub-sep">Бэлэн бус</th>
+              <th colspan="2" class="center sub-head col-cash bank-sep">Бэлэн</th>
+              <th colspan="2" class="center sub-head col-nc sub-sep">Бэлэн бус</th>
             </tr>
             <tr>
-              <th class="num col-nc bank-sep">Авах</th><th class="num col-nc">Зарах</th>
-              <th class="num col-cash sub-sep">Авах</th><th class="num col-cash">Зарах</th>
-              <th class="num col-nc bank-sep">Авах</th><th class="num col-nc">Зарах</th>
-              <th class="num col-cash sub-sep">Авах</th><th class="num col-cash">Зарах</th>
-              <th class="num col-nc bank-sep">Авах</th><th class="num col-nc">Зарах</th>
-              <th class="num col-cash sub-sep">Авах</th><th class="num col-cash">Зарах</th>
+              <th class="num col-cash bank-sep">Авах</th><th class="num col-cash">Зарах</th>
+              <th class="num col-nc sub-sep">Авах</th><th class="num col-nc">Зарах</th>
+              <th class="num col-cash bank-sep">Авах</th><th class="num col-cash">Зарах</th>
+              <th class="num col-nc sub-sep">Авах</th><th class="num col-nc">Зарах</th>
+              <th class="num col-cash bank-sep">Авах</th><th class="num col-cash">Зарах</th>
+              <th class="num col-nc sub-sep">Авах</th><th class="num col-nc">Зарах</th>
             </tr>
           </thead>
           <tbody>
