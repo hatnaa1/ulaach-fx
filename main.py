@@ -19,11 +19,14 @@ from platform_routes import (
     _ww_text,
     build_seo_meta_html,
     extract_visitor_info,
+    fetch_les_company,
+    fetch_les_stats,
     fetch_weather_hub_data,
     get_live_meteo_for_stations,
     num2words_mn,
     parse_mongolian_regno,
     render_favicon_svg,
+    render_les_page,
     render_og_image_svg,
     render_portal_page,
     render_robots_txt,
@@ -32,6 +35,7 @@ from platform_routes import (
     render_util_page,
     render_weather_page,
     render_weather_widget,
+    search_les_entities,
     sync_dns_lookup,
     sync_ip_lookup,
     sync_port_check,
@@ -1509,6 +1513,51 @@ async def get_forecast_json(
     )
 
 
+@app.get("/company.json")
+@app.get("/api/v1/les/company")
+async def get_les_company_json(
+    regno: str = Query(..., description="Хуулийн этгээдийн регистрийн дугаар (7 цифр, ж.нь: 2585065)"),
+) -> JSONResponse:
+    wx_pool = await get_wx_pool()
+    entity = await fetch_les_company(wx_pool, regno)
+    if not entity:
+        raise HTTPException(status_code=404, detail=f"Регистрийн дугаар олдсонгүй: {regno}")
+    return JSONResponse(content=entity)
+
+
+@app.get("/search.json")
+@app.get("/api/v1/les/search")
+async def get_les_search_json(
+    q: str = Query("", description="Хайх утга (РД, оноосон нэр, захирал/хувьцаа эзэмшигч/UBO нэр, үйл ажиллагаа)"),
+    field: str = Query("all", description="Хайх талбар: all | name | regno | person | activity"),
+    legal_form: str = Query("", description="Хуулийн этгээдийн хэлбэрээр шүүх"),
+    entity_type: str = Query("", description="Ашгийн төлөө / Ашгийн төлөө бус"),
+    year: int | None = Query(None, description="Бүртгэсэн оноор шүүх (1991-2026)"),
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> JSONResponse:
+    wx_pool = await get_wx_pool()
+    res = await search_les_entities(
+        wx_pool,
+        q=q,
+        field=field,
+        legal_form=legal_form,
+        entity_type=entity_type,
+        year=year,
+        limit=limit,
+        offset=offset,
+    )
+    return JSONResponse(content=res)
+
+
+@app.get("/stats.json")
+@app.get("/api/v1/les/stats")
+async def get_les_stats_json() -> JSONResponse:
+    wx_pool = await get_wx_pool()
+    res = await fetch_les_stats(wx_pool)
+    return JSONResponse(content=res)
+
+
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def index_page(request: Request, site: str | None = Query(None)) -> HTMLResponse:
     host_raw = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "ulaach.cc").split(":")[0].lower()
@@ -1516,6 +1565,8 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
     if not target:
         if host_raw.startswith("weather."):
             target = "weather"
+        elif host_raw.startswith("les.") or host_raw.startswith("org."):
+            target = "les"
         elif host_raw.startswith("tool.") or host_raw.startswith("ip."):
             target = "tool"
         elif host_raw.startswith("util.") or host_raw.startswith("utils."):
@@ -1529,6 +1580,9 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
         return render_tool_page(request)
     if target == "util":
         return render_util_page()
+    if target == "les":
+        wx_pool = await get_wx_pool()
+        return await render_les_page(wx_pool)
     if target == "weather":
         wx_pool = await get_wx_pool()
         return await render_weather_page(wx_pool)
@@ -2082,6 +2136,7 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
         <a class="nav-btn" href="#sec-3">03. Bank Rates</a>
         <a class="nav-btn" href="#sec-4">04. MNB 38 Currencies</a>
         <a class="nav-btn" href="https://weather.ulaach.cc">weather.ulaach.cc</a>
+        <a class="nav-btn" href="https://les.ulaach.cc">les.ulaach.cc</a>
         <a class="nav-btn" href="https://tool.ulaach.cc">tool.ulaach.cc</a>
         <a class="nav-btn primary" href="/api/docs" target="_blank">OpenAPI →</a>
       </div>
