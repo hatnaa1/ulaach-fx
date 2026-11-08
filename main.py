@@ -1676,120 +1676,214 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
     fx_seo_meta = build_seo_meta_html("fx", title_override="fx.ulaach.cc — Монголбанк ба Арилжааны Банкуудын Валютын Ханшийн Developer API")
 
     html_doc = f"""<!DOCTYPE html>
-<html lang="mn">
+<html lang="mn" data-theme="light">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>fx.ulaach.cc — Монголбанк ба Арилжааны Банкуудын Валютын Ханшийн Developer API</title>
 {fx_seo_meta}
+  <script>
+    (function() {{
+      try {{
+        var saved = localStorage.getItem('ulaach-theme');
+        if (saved === 'dark' || saved === 'light') {{
+          document.documentElement.setAttribute('data-theme', saved);
+        }}
+      }} catch (e) {{}}
+    }})();
+  </script>
   <style>
-    :root {{
-      --bg: #090d16;
-      --bg-grid: rgba(148, 163, 184, 0.04);
-      --panel: #0f1624;
-      --panel-alt: #131c2e;
-      --code-bg: #060911;
-      --ink: #e2e8f0;
-      --ink-bright: #f8fafc;
-      --muted: #8b9bb4;
-      --border: #1e293b;
-      --border-strong: #334155;
-      --brand: #10b981;
+    :root, html[data-theme="light"] {{
+      --bg: #F6F5F0;
+      --panel: #FFFFFF;
+      --panel-alt: #FAF9F5;
+      --code-bg: #FAF9F5;
+      --ink: #141413;
+      --ink-bright: #141413;
+      --muted: #5E5D59;
+      --border: #E5E3DC;
+      --border-strong: #D1CFC7;
+      --brand: #0D9488;
+      --brand-soft: rgba(13, 148, 136, 0.12);
+      --brand-border: rgba(13, 148, 136, 0.35);
+      --accent: #0284C7;
+      --accent-soft: rgba(2, 132, 199, 0.12);
+      --buy: #0D9488;
+      --sell: #D97706;
+      --topbar-bg: rgba(250, 249, 245, 0.92);
+      --nav-seg-bg: #EAE8E0;
+      --card-shadow: 0 1px 2px rgba(20, 20, 19, 0.04), 0 4px 16px rgba(20, 20, 19, 0.03);
+      --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+    }}
+    html[data-theme="dark"] {{
+      --bg: #0A0B0E;
+      --panel: #111318;
+      --panel-alt: #161922;
+      --code-bg: #0D0F14;
+      --ink: #E2E8F0;
+      --ink-bright: #F8FAFC;
+      --muted: #9CA3AF;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --brand: #10B981;
       --brand-soft: rgba(16, 185, 129, 0.12);
       --brand-border: rgba(16, 185, 129, 0.32);
-      --accent: #38bdf8;
+      --accent: #38BDF8;
       --accent-soft: rgba(56, 189, 248, 0.12);
-      --buy: #34d399;
-      --sell: #fbbf24;
-      --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --buy: #34D399;
+      --sell: #FBBF24;
+      --topbar-bg: rgba(10, 11, 14, 0.88);
+      --nav-seg-bg: rgba(255, 255, 255, 0.05);
+      --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
       font-family: var(--sans);
       background-color: var(--bg);
-      background-image:
-        linear-gradient(to right, var(--bg-grid) 1px, transparent 1px),
-        linear-gradient(to bottom, var(--bg-grid) 1px, transparent 1px);
-      background-size: 28px 28px;
       color: var(--ink);
       line-height: 1.55;
       font-size: 14px;
       -webkit-font-smoothing: antialiased;
+      transition: background-color 0.15s ease, color 0.15s ease;
     }}
     .topbar {{
       border-bottom: 1px solid var(--border);
-      background: rgba(9, 13, 22, 0.85);
-      backdrop-filter: blur(8px);
+      background: var(--topbar-bg);
+      backdrop-filter: blur(12px);
       position: sticky;
       top: 0;
-      z-index: 20;
+      z-index: 40;
     }}
     .topbar-inner {{
-      max-width: 1220px;
+      max-width: 1180px;
       margin: 0 auto;
-      padding: 12px 24px;
+      padding: 10px 24px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
+      gap: 14px;
       flex-wrap: wrap;
     }}
     .brand-bar {{
       display: flex;
       align-items: center;
       gap: 10px;
-      font-family: var(--mono);
-      font-size: 13px;
-      font-weight: 600;
+      font-family: var(--sans);
+      font-size: 15px;
+      font-weight: 700;
       color: var(--ink-bright);
     }}
     .status-dot {{
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--brand);
-      box-shadow: 0 0 10px var(--brand);
-      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: #F5A11C;
+      color: #111111;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 13px;
+      box-shadow: 0 1px 3px rgba(245, 161, 28, 0.35);
     }}
+    .status-dot::after {{ content: "У"; }}
     .nav-links {{
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 4px;
       flex-wrap: wrap;
+      background: var(--nav-seg-bg);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
     }}
     .nav-btn {{
-      font-family: var(--mono);
-      font-size: 12px;
-      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--muted);
       text-decoration: none;
       padding: 5px 11px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      background: var(--panel);
-      transition: border-color 0.15s, color 0.15s;
+      border-radius: 7px;
+      border: 1px solid transparent;
+      background: transparent;
+      transition: all 0.15s;
     }}
     .nav-btn:hover {{
-      border-color: var(--brand);
-      color: var(--brand);
+      color: var(--ink-bright);
+      background: rgba(128, 128, 128, 0.08);
     }}
     .nav-btn.primary {{
-      background: var(--brand-soft);
-      border-color: var(--brand-border);
-      color: var(--brand);
+      background: var(--panel);
+      border-color: var(--border);
+      color: var(--ink-bright);
+      font-weight: 600;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    }}
+    .theme-toggle-btn {{
+      font-family: var(--sans);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 11px;
+      border-radius: 8px;
+      border: 1px solid var(--border-strong);
+      background: var(--panel);
+      color: var(--ink-bright);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }}
+    .view-tabs-bar {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      background: var(--nav-seg-bg);
+      padding: 5px;
+      border-radius: 11px;
+      border: 1px solid var(--border);
+      margin-bottom: 20px;
+    }}
+    .view-tabs-list {{
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+    }}
+    .view-tab-btn {{
+      font-family: var(--sans);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 7px 15px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }}
+    .view-tab-btn.active {{
+      background: var(--panel);
+      color: var(--ink-bright);
+      border-color: var(--border);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
     }}
     .container {{
-      max-width: 1220px;
+      max-width: 1180px;
       margin: 0 auto;
-      padding: 28px 24px 72px;
+      padding: 24px 24px 72px;
     }}
     .hero {{
-      margin-bottom: 24px;
-      padding: 22px 24px;
+      margin-bottom: 20px;
+      padding: 22px 26px;
       border: 1px solid var(--border);
-      border-radius: 10px;
-      background: linear-gradient(180deg, rgba(19, 28, 46, 0.75) 0%, rgba(15, 22, 36, 0.95) 100%);
+      border-radius: 14px;
+      background: var(--panel);
+      box-shadow: var(--card-shadow);
       display: flex;
       flex-wrap: wrap;
       justify-content: space-between;
@@ -1798,16 +1892,16 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
     }}
     h1 {{
       margin: 0 0 8px 0;
-      font-size: 22px;
+      font-size: 24px;
       font-weight: 700;
       color: var(--ink-bright);
-      letter-spacing: -0.02em;
+      letter-spacing: -0.025em;
     }}
     .subtitle {{
       margin: 0;
       color: var(--muted);
-      font-size: 13.5px;
-      max-width: 720px;
+      font-size: 14px;
+      max-width: 780px;
     }}
     .meta-strip {{
       display: flex;
@@ -1830,10 +1924,10 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
     .section-card {{
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 14px;
       padding: 22px 24px;
       margin-bottom: 20px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+      box-shadow: var(--card-shadow);
       scroll-margin-top: 76px;
     }}
     .section-head {{
@@ -2107,7 +2201,7 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
     .sub-head {{
       font-size: 11px;
       color: var(--ink);
-      background: rgba(15, 22, 36, 0.75);
+      background: var(--panel-alt);
       text-transform: none;
       letter-spacing: 0.01em;
     }}
@@ -2127,37 +2221,83 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
     <div class="topbar-inner">
       <a class="brand-bar" href="https://ulaach.cc" style="text-decoration:none;">
         <span class="status-dot"></span>
-        <span>fx.ulaach.cc // FX-API v1.2</span>
+        <span>Улаач • Open Data &amp; API</span>
       </a>
-      <div class="nav-links">
-        <a class="nav-btn" href="https://ulaach.cc">← Portal (ulaach.cc)</a>
-        <a class="nav-btn" href="#sec-1">01. Endpoints</a>
-        <a class="nav-btn" href="#sec-2">02. Params &amp; Widget</a>
-        <a class="nav-btn" href="#sec-3">03. Bank Rates</a>
-        <a class="nav-btn" href="#sec-4">04. MNB 38 Currencies</a>
-        <a class="nav-btn" href="https://weather.ulaach.cc">weather.ulaach.cc</a>
-        <a class="nav-btn" href="https://les.ulaach.cc">les.ulaach.cc</a>
-        <a class="nav-btn" href="https://tool.ulaach.cc">tool.ulaach.cc</a>
-        <a class="nav-btn primary" href="/api/docs" target="_blank">OpenAPI →</a>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div class="nav-links">
+          <a class="nav-btn" href="https://ulaach.cc">Портал</a>
+          <a class="nav-btn primary" href="https://fx.ulaach.cc">Валютын Ханш</a>
+          <a class="nav-btn" href="https://weather.ulaach.cc">Цаг Агаар &amp; AQI</a>
+          <a class="nav-btn" href="https://les.ulaach.cc">Хуулийн Этгээд</a>
+          <a class="nav-btn" href="https://tool.ulaach.cc">IP &amp; Сүлжээ</a>
+          <a class="nav-btn" href="https://util.ulaach.cc">Хөрвүүлэгч</a>
+        </div>
+        <button type="button" class="theme-toggle-btn" id="ulaach-theme-btn" onclick="window.__toggleUlaachTheme()">
+          <span id="ulaach-theme-icon">🌙</span>
+          <span id="ulaach-theme-label">Dark</span>
+        </button>
       </div>
     </div>
   </div>
+  <script>
+    (function() {{
+      function syncBtn() {{
+        var cur = document.documentElement.getAttribute('data-theme') || 'light';
+        var ic = document.getElementById('ulaach-theme-icon');
+        var lb = document.getElementById('ulaach-theme-label');
+        if (ic && lb) {{
+          if (cur === 'dark') {{ ic.textContent = '☀️'; lb.textContent = 'Light'; }}
+          else {{ ic.textContent = '🌙'; lb.textContent = 'Dark'; }}
+        }}
+      }}
+      window.__toggleUlaachTheme = function() {{
+        var cur = document.documentElement.getAttribute('data-theme') || 'light';
+        var next = (cur === 'dark') ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        try {{ localStorage.setItem('ulaach-theme', next); }} catch (e) {{}}
+        syncBtn();
+      }};
+      window.__switchViewTab = function(group, tabId, btn) {{
+        document.querySelectorAll('[data-tab-group="' + group + '"]').forEach(function(sec) {{
+          var list = (sec.getAttribute('data-tab-id') || '').split(' ');
+          if (tabId === 'all' || list.indexOf(tabId) !== -1) {{ sec.style.display = ''; }}
+          else {{ sec.style.display = 'none'; }}
+        }});
+        if (btn && btn.parentElement) {{
+          btn.parentElement.querySelectorAll('.view-tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
+          btn.classList.add('active');
+        }}
+        window.dispatchEvent(new Event('resize'));
+      }};
+      syncBtn();
+    }})();
+  </script>
 
   <div class="container">
     <div class="hero">
       <div>
-        <h1>Монголбанк ба Арилжааны банкны ханшийн Developer API</h1>
-        <p class="subtitle">Монголбанкны 38 валютын өдөр тутмын албан ханш, түүхэн огнооны лавлагаа (<code>?date=YYYY-MM-DD</code>), арилжааны банкуудын цаг тутмын ханш болон олон хэлний (<code>MN</code>, <code>EN</code>, <code>CN</code>, <code>JP</code>, <code>KR</code>) бэлэн веб виджет.</p>
+        <div class="mono" style="font-size:11.5px;color:var(--brand);font-weight:700;margin-bottom:4px;">MONGOLBANK &amp; COMMERCIAL BANKS FX API // FRANKFURTER + OPEN DATA</div>
+        <h1>Монголбанк ба Арилжааны банкны ханшийн Платформ &amp; API</h1>
+        <p class="subtitle">Монголбанкны 38 валютын өдөр тутмын албан ханш, 1 жилийн түүхэн график, арилжааны банкуудын (Хаан, Голомт, ХХБ) цаг тутмын бэлэн/бэлэн бус ханш болон олон хэлний бэлэн веб виджет.</p>
       </div>
       <div class="meta-strip">
-        <span class="meta-tag">MNB_DATE: <strong>{html.escape(latest_date)}</strong> (38 валют)</span>
-        <span class="meta-tag">BANKS_SYNC: <strong>{html.escape(latest_bank_hour)}</strong></span>
-        <span class="meta-tag">LANG: <strong>MN / EN / CN / JP / KR</strong></span>
+        <span class="meta-tag">МБ ОГНОО: <strong>{html.escape(latest_date)}</strong> (38 валют)</span>
+        <span class="meta-tag">БАНКУУД: <strong>{html.escape(latest_bank_hour)}</strong></span>
+        <span class="meta-tag">ХЭЛ: <strong>MN / EN / CN / JP / KR</strong></span>
       </div>
     </div>
 
-    <!-- 01. Шууд дуудах JSON Endpoint-ууд -->
-    <section id="sec-1" class="section-card">
+    <div class="view-tabs-bar">
+      <div class="view-tabs-list">
+        <button type="button" class="view-tab-btn active" onclick="window.__switchViewTab('fx', 'rates', this)">🏦 Арилжааны Банкууд &amp; 38 Валют</button>
+        <button type="button" class="view-tab-btn" onclick="window.__switchViewTab('fx', 'chart', this)">📈 1 Жилийн График &amp; JSON API</button>
+        <button type="button" class="view-tab-btn" onclick="window.__switchViewTab('fx', 'widget', this)">🧩 Олон Хэлний IFrame Виджет</button>
+      </div>
+      <button type="button" class="copy-btn" onclick="window.__switchViewTab('fx', 'all', this)">Бүгдийг дэлгэх</button>
+    </div>
+
+    <!-- 01. Шууд дуудах JSON Endpoint-ууд & 1 Жилийн График -->
+    <section id="sec-1" class="section-card" data-tab-group="fx" data-tab-id="chart rates">
       <div class="section-head">
         <h2 class="section-title"><span class="step-badge">01</span> Шууд дуудах JSON Endpoint-ууд</h2>
         <span class="section-note">Content-Type: application/json; charset=utf-8</span>
@@ -2205,14 +2345,14 @@ async def index_page(request: Request, site: str | None = Query(None)) -> HTMLRe
         </div>
       </div>
 
-      <div style="margin: 14px 20px; background: linear-gradient(180deg, rgba(15,23,42,0.85) 0%, rgba(7,10,18,0.95) 100%); border: 1px solid var(--border-strong); border-radius: 10px; padding: 16px;">
+      <div style="margin: 14px 0; background: #0B0F17 !important; color: #F8FAFC !important; border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
           <div>
-            <div class="mono" style="font-size:12.5px;color:var(--ink-bright);font-weight:700;display:flex;align-items:center;gap:8px;">
-              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--brand);box-shadow:0 0 8px var(--brand);"></span>
+            <div class="mono" style="font-size:12.5px;color:#F8FAFC !important;font-weight:700;display:flex;align-items:center;gap:8px;">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;box-shadow:0 0 8px #10b981;"></span>
               ТҮҮХЭН ХАНШИЙН ИНТЕРАКТИВ ГРАФИК — amCharts 5 (GET /history.json)
             </div>
-            <div style="font-size:12px;color:var(--muted);margin-top:2px;">Хулганаар чирж томруулах (Zoom), гүйлгэж харах (Scrollbar), огноо тус бүрийн нарийвчилсан ханш харах боломжтой</div>
+            <div style="font-size:12px;color:#94a3b8 !important;margin-top:2px;">Хулганаар чирж томруулах (Zoom), гүйлгэж харах (Scrollbar), огноо тус бүрийн нарийвчилсан ханш харах боломжтой</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <div class="lang-tabs" id="chart-tabs">
@@ -2269,7 +2409,7 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
     </section>
 
     <!-- 02. GET Параметрүүд ба Олон хэлний IFrame Виджет -->
-    <section id="sec-2" class="section-card">
+    <section id="sec-2" class="section-card" data-tab-group="fx" data-tab-id="widget" style="display:none;">
       <div class="section-head">
         <h2 class="section-title"><span class="step-badge">02</span> GET Параметрүүд ба Олон хэлний IFrame Виджет</h2>
         <span class="section-note">Supported Languages: MN, EN, CN, JP, KR</span>
@@ -2350,7 +2490,7 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
     </section>
 
     <!-- 03. Арилжааны банкуудын бэлэн ба бэлэн бус ханшийн харьцуулалт -->
-    <section id="sec-3" class="section-card">
+    <section id="sec-3" class="section-card" data-tab-group="fx" data-tab-id="rates">
       <div class="section-head">
         <h2 class="section-title"><span class="step-badge">03</span> Арилжааны банкуудын бэлэн ба бэлэн бус ханшийн харьцуулалт</h2>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
@@ -2398,7 +2538,7 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
     </section>
 
     <!-- 04. Монголбанкны албан ханшийн жагсаалт (Бүх 38 валют) -->
-    <section id="sec-4" class="section-card" style="margin-bottom:0;">
+    <section id="sec-4" class="section-card" data-tab-group="fx" data-tab-id="rates" style="margin-bottom:0;">
       <div class="section-head">
         <h2 class="section-title"><span class="step-badge">04</span> Монголбанкны албан ханшийн жагсаалт (Бүх 38 валют)</h2>
         <span class="section-note">Ханшийн огноо: {html.escape(latest_date)} (GET /xansh.json)</span>
@@ -2491,9 +2631,9 @@ curl -s "{base_url}/xansh.json?currency=USD|EUR&amp;date={html.escape(latest_dat
         var sign = isUp ? '+' : '';
         var curName = rows[rows.length - 1].name || cur;
 
-        var cardStyle = 'background:rgba(15,22,36,0.9);border:1px solid var(--border);border-radius:8px;padding:9px 12px;';
-        var lblStyle = 'font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;margin-bottom:2px;';
-        var valStyle = 'font-size:15px;font-weight:700;font-family:var(--mono);color:var(--ink-bright);';
+        var cardStyle = 'background:rgba(15,22,36,0.9);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:9px 12px;';
+        var lblStyle = 'font-size:11px;color:#94a3b8;font-family:var(--mono);text-transform:uppercase;margin-bottom:2px;';
+        var valStyle = 'font-size:15px;font-weight:700;font-family:var(--mono);color:#f8fafc;';
 
         statsEl.innerHTML = [
           '<div style="' + cardStyle + '"><div style="' + lblStyle + '">' + cur + ' • ОДООГИЙН ХАНШ</div><div style="' + valStyle + 'color:#38bdf8;">' + fmtNum(last) + ' ₮ <span style="font-size:11px;font-weight:400;color:var(--muted);">(' + curName + ')</span></div></div>',
